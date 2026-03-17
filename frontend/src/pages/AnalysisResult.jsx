@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
+import { API } from '../lib/api';
 import {
   Table,
   TableBody,
@@ -26,8 +27,6 @@ import {
   Download,
   Share2
 } from 'lucide-react';
-
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function AnalysisResult() {
   const { id } = useParams();

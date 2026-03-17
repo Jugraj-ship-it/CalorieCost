@@ -1,5 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -15,6 +17,7 @@ import bcrypt
 import base64
 
 ROOT_DIR = Path(__file__).parent
+FRONTEND_DIST_DIR = ROOT_DIR.parent / "frontend" / "build"
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
@@ -843,7 +846,7 @@ async def get_calendar_data(
         {
             "$group": {
                 "_id": "$date",
-                "total_calories": {"$sum": "$calories_consumed"},
+                "total_calories": {"$sum": "$calories"},
                 "total_cost": {"$sum": "$cost"},
                 "meal_count": {"$sum": 1}
             }
@@ -1113,6 +1116,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if FRONTEND_DIST_DIR.exists():
+    assets_dir = FRONTEND_DIST_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        requested_path = FRONTEND_DIST_DIR / full_path
+        if full_path and requested_path.is_file():
+            return FileResponse(requested_path)
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

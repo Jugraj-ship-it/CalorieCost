@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { API } from '../lib/api';
 import { 
   Camera, 
   FileText, 
@@ -21,8 +22,6 @@ import {
   Plus,
   Search
 } from 'lucide-react';
-
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // Autocomplete Input Component
 const FoodAutocomplete = ({ value, onChange, onSelect, placeholder }) => {

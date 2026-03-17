@@ -9,6 +9,7 @@ import { Input } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
 import { Calendar } from '../components/ui/calendar';
+import { API } from '../lib/api';
 import {
   Dialog,
   DialogContent,
@@ -48,8 +49,6 @@ import {
   ArrowRight,
   CheckCircle2
 } from 'lucide-react';
-
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const MEAL_TYPES = [
   { value: 'breakfast', label: 'Breakfast', icon: '🌅' },

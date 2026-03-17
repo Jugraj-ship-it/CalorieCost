@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
+import { API } from '../lib/api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +27,6 @@ import {
   Eye,
   History
 } from 'lucide-react';
-
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function Dashboard() {
   const [analyses, setAnalyses] = useState([]);

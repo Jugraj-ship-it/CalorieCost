@@ -6,6 +6,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isTod
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
+import { API } from '../lib/api';
 import { 
   ChevronLeft, 
   ChevronRight,
@@ -14,8 +15,6 @@ import {
   CalendarDays,
   TrendingUp
 } from 'lucide-react';
-
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date());

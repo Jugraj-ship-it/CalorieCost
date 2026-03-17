@@ -1,0 +1,10 @@
+.git
+.emergent
+memory
+tests
+test_reports
+frontend/node_modules
+frontend/build
+backend/__pycache__
+backend/.pytest_cache
+backend/.venv
