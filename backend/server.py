@@ -65,6 +65,19 @@ class FoodItem(BaseModel):
     calories_per_dollar: float
     quantity: Optional[str] = None
 
+class ExtractRequest(BaseModel):
+    receipt_text: Optional[str] = None
+    receipt_image_base64: Optional[str] = None
+
+class ExtractedItem(BaseModel):
+    name: str
+    calories: int
+    price: float
+    quantity: Optional[str] = None
+
+class AnalysisFromItemsRequest(BaseModel):
+    items: List[ExtractedItem]
+
 class AnalysisRequest(BaseModel):
     receipt_text: Optional[str] = None
     receipt_image_base64: Optional[str] = None
@@ -387,6 +400,98 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     )
 
 # ==================== ANALYSIS ROUTES ====================
+
+@api_router.post("/extract")
+async def extract_items(data: ExtractRequest, current_user: dict = Depends(get_current_user)):
+    """Extract items from receipt without saving - allows user to edit before final analysis"""
+    if not data.receipt_text and not data.receipt_image_base64:
+        raise HTTPException(status_code=400, detail="Either receipt_text or receipt_image_base64 is required")
+    
+    # Analyze with AI
+    ai_result = await analyze_receipt_with_ai(
+        text=data.receipt_text,
+        image_base64=data.receipt_image_base64
+    )
+    
+    # Process items
+    extracted_items = []
+    for item_data in ai_result.get("items", []):
+        price = float(item_data.get("price", 0))
+        calories = int(item_data.get("calories", 0))
+        
+        # Try to enhance with database if AI gave low confidence
+        if calories == 0:
+            db_estimate = estimate_calories_from_database(item_data.get("name", ""))
+            if db_estimate:
+                calories = db_estimate["calories"]
+        
+        if price > 0:
+            extracted_items.append({
+                "name": item_data.get("name", "Unknown"),
+                "calories": calories if calories > 0 else 100,  # Default to 100 if unknown
+                "price": price,
+                "quantity": item_data.get("quantity")
+            })
+    
+    if not extracted_items:
+        raise HTTPException(status_code=400, detail="No valid food items found in receipt")
+    
+    return {"items": extracted_items}
+
+@api_router.post("/analysis/from-items", response_model=AnalysisResult)
+async def create_analysis_from_items(data: AnalysisFromItemsRequest, current_user: dict = Depends(get_current_user)):
+    """Create analysis from user-edited items list"""
+    if not data.items:
+        raise HTTPException(status_code=400, detail="Items list cannot be empty")
+    
+    # Process items
+    food_items = []
+    for item_data in data.items:
+        price = float(item_data.price)
+        calories = int(item_data.calories)
+        
+        if price > 0 and calories > 0:
+            cpd = calories / price
+            food_items.append(FoodItem(
+                name=item_data.name,
+                calories=calories,
+                price=price,
+                calories_per_dollar=round(cpd, 2),
+                quantity=item_data.quantity
+            ))
+    
+    if not food_items:
+        raise HTTPException(status_code=400, detail="No valid food items provided")
+    
+    # Sort by calories per dollar
+    food_items.sort(key=lambda x: x.calories_per_dollar, reverse=True)
+    
+    # Calculate totals
+    total_calories = sum(item.calories for item in food_items)
+    total_cost = sum(item.price for item in food_items)
+    avg_cpd = total_calories / total_cost if total_cost > 0 else 0
+    
+    # Generate insights
+    insights_data = generate_insights(food_items)
+    
+    # Create analysis record
+    analysis_id = str(uuid.uuid4())
+    analysis = {
+        "id": analysis_id,
+        "user_id": current_user["id"],
+        "items": [item.model_dump() for item in food_items],
+        "total_calories": total_calories,
+        "total_cost": round(total_cost, 2),
+        "avg_calories_per_dollar": round(avg_cpd, 2),
+        "best_value_items": insights_data["best_value"],
+        "worst_value_items": insights_data["worst_value"],
+        "insights": insights_data["insights"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.analyses.insert_one(analysis)
+    
+    return AnalysisResult(**{k: v for k, v in analysis.items() if k != "_id"})
 
 @api_router.post("/analysis", response_model=AnalysisResult)
 async def create_analysis(data: AnalysisRequest, current_user: dict = Depends(get_current_user)):

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
+import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
   Camera, 
@@ -12,8 +13,11 @@ import {
   Upload, 
   Loader2, 
   X,
-  Image as ImageIcon,
-  Sparkles
+  Sparkles,
+  Pencil,
+  Trash2,
+  Check,
+  ArrowLeft
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -25,6 +29,8 @@ export default function Analyze() {
   const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [extractedItems, setExtractedItems] = useState(null);
+  const [editingIndex, setEditingIndex] = useState(null);
   const navigate = useNavigate();
 
   const handleDrag = useCallback((e) => {
@@ -73,6 +79,7 @@ export default function Analyze() {
   const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
+    setExtractedItems(null);
   };
 
   const convertToBase64 = (file) => {
@@ -84,29 +91,84 @@ export default function Analyze() {
     });
   };
 
-  const handleAnalyze = async () => {
-    if (activeTab === 'upload' && !imageFile) {
+  // Extract items from image (step 1)
+  const handleExtract = async () => {
+    if (!imageFile) {
       toast.error('Please upload a receipt image');
       return;
     }
 
-    if (activeTab === 'text' && !receiptText.trim()) {
+    setLoading(true);
+    try {
+      const base64 = await convertToBase64(imageFile);
+      const response = await axios.post(`${API}/extract`, {
+        receipt_image_base64: base64
+      });
+      setExtractedItems(response.data.items);
+      toast.success(`Extracted ${response.data.items.length} items! Review and edit if needed.`);
+    } catch (error) {
+      const message = error.response?.data?.detail || 'Extraction failed. Please try again.';
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle item edit
+  const handleItemChange = (index, field, value) => {
+    const updated = [...extractedItems];
+    if (field === 'calories' || field === 'price') {
+      updated[index][field] = parseFloat(value) || 0;
+    } else {
+      updated[index][field] = value;
+    }
+    setExtractedItems(updated);
+  };
+
+  // Handle item delete
+  const handleDeleteItem = (index) => {
+    const updated = extractedItems.filter((_, i) => i !== index);
+    setExtractedItems(updated);
+    if (updated.length === 0) {
+      setExtractedItems(null);
+      toast.info('All items removed. Upload a new receipt or add items manually.');
+    }
+  };
+
+  // Submit edited items for final analysis
+  const handleSubmitItems = async () => {
+    if (!extractedItems || extractedItems.length === 0) {
+      toast.error('No items to analyze');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API}/analysis/from-items`, {
+        items: extractedItems
+      });
+      toast.success('Analysis complete!');
+      navigate(`/analysis/${response.data.id}`);
+    } catch (error) {
+      const message = error.response?.data?.detail || 'Analysis failed. Please try again.';
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Direct analysis for text input (no edit step needed since user typed it)
+  const handleAnalyzeText = async () => {
+    if (!receiptText.trim()) {
       toast.error('Please enter receipt text');
       return;
     }
 
     setLoading(true);
     try {
-      const payload = {};
-
-      if (activeTab === 'upload' && imageFile) {
-        const base64 = await convertToBase64(imageFile);
-        payload.receipt_image_base64 = base64;
-      } else if (activeTab === 'text') {
-        payload.receipt_text = receiptText;
-      }
-
-      const response = await axios.post(`${API}/analysis`, payload);
+      const response = await axios.post(`${API}/analysis`, {
+        receipt_text: receiptText
+      });
       toast.success('Analysis complete!');
       navigate(`/analysis/${response.data.id}`);
     } catch (error) {
@@ -135,6 +197,12 @@ Subtotal: $44.46
 Tax: $0.00
 Total: $44.46`;
 
+  // Reset to upload state
+  const handleBackToUpload = () => {
+    setExtractedItems(null);
+    setEditingIndex(null);
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-8 py-8" data-testid="analyze-page">
       {/* Header */}
@@ -143,145 +211,306 @@ Total: $44.46`;
           Analyze Receipt
         </h1>
         <p className="text-muted-foreground font-inter">
-          Upload an image or paste your receipt text to calculate calories per dollar
+          {extractedItems 
+            ? "Review and edit extracted items before analysis"
+            : "Upload an image or paste your receipt text to calculate calories per dollar"
+          }
         </p>
       </div>
 
       {/* Main Card */}
       <Card className="border-border/50 rounded-2xl shadow-lg">
-        <CardHeader>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 h-12 rounded-xl">
-              <TabsTrigger 
-                value="upload" 
-                className="rounded-lg font-outfit data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                data-testid="tab-upload"
-              >
-                <Camera className="w-4 h-4 mr-2" />
-                Image Upload
-              </TabsTrigger>
-              <TabsTrigger 
-                value="text"
-                className="rounded-lg font-outfit data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                data-testid="tab-text"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Manual Entry
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardHeader>
-
-        <CardContent className="pt-0">
-          {activeTab === 'upload' ? (
-            <div className="space-y-6">
-              {/* Dropzone */}
-              {!imagePreview ? (
-                <div
-                  className={`dropzone ${dragActive ? 'border-primary bg-primary/10' : ''}`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
-                  onClick={() => document.getElementById('file-input').click()}
-                  data-testid="dropzone"
-                >
-                  <input
-                    id="file-input"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileInput}
-                    className="hidden"
-                    data-testid="file-input"
-                  />
-                  <div className="dropzone-icon text-primary/50 transition-all duration-300">
-                    <Upload className="w-16 h-16 mx-auto mb-4" />
+        {/* Show extracted items for editing */}
+        {extractedItems ? (
+          <>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBackToUpload}
+                    data-testid="back-to-upload"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </Button>
+                  <div>
+                    <CardTitle className="font-outfit">Review Extracted Items</CardTitle>
+                    <CardDescription>
+                      {extractedItems.length} items found. Click to edit or delete items.
+                    </CardDescription>
                   </div>
-                  <h3 className="font-outfit font-semibold text-lg mb-2">
-                    Drop your receipt here
-                  </h3>
-                  <p className="text-muted-foreground text-sm mb-4">
-                    or click to browse files
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Supports JPG, PNG, WEBP • Max 10MB
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 mb-6">
+                {extractedItems.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted/70 transition-colors group"
+                    data-testid={`extracted-item-${index}`}
+                  >
+                    {editingIndex === index ? (
+                      // Edit mode
+                      <>
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3">
+                          <Input
+                            value={item.name}
+                            onChange={(e) => handleItemChange(index, 'name', e.target.value)}
+                            placeholder="Item name"
+                            className="font-medium"
+                            data-testid={`edit-name-${index}`}
+                          />
+                          <Input
+                            type="number"
+                            value={item.calories}
+                            onChange={(e) => handleItemChange(index, 'calories', e.target.value)}
+                            placeholder="Calories"
+                            className="font-mono"
+                            data-testid={`edit-calories-${index}`}
+                          />
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.price}
+                            onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                            placeholder="Price"
+                            className="font-mono"
+                            data-testid={`edit-price-${index}`}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingIndex(null)}
+                            className="w-full md:w-auto"
+                            data-testid={`save-edit-${index}`}
+                          >
+                            <Check className="w-4 h-4 mr-2" />
+                            Done
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      // View mode
+                      <>
+                        <div className="flex-1">
+                          <p className="font-medium">{item.name}</p>
+                          {item.quantity && (
+                            <p className="text-xs text-muted-foreground">{item.quantity}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-mono text-sm">{item.calories} cal</p>
+                          <p className="font-mono text-sm text-muted-foreground">${item.price.toFixed(2)}</p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setEditingIndex(index)}
+                            data-testid={`edit-item-${index}`}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteItem(index)}
+                            className="text-destructive hover:text-destructive"
+                            data-testid={`delete-item-${index}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                className="w-full h-14 rounded-xl font-outfit font-bold text-lg"
+                onClick={handleSubmitItems}
+                disabled={loading || extractedItems.length === 0}
+                data-testid="submit-items-btn"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    Confirm & Analyze ({extractedItems.length} items)
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </>
+        ) : (
+          // Upload/Text input view
+          <>
+            <CardHeader>
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2 h-12 rounded-xl">
+                  <TabsTrigger 
+                    value="upload" 
+                    className="rounded-lg font-outfit data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                    data-testid="tab-upload"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Image Upload
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="text"
+                    className="rounded-lg font-outfit data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                    data-testid="tab-text"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Manual Entry
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </CardHeader>
+
+            <CardContent className="pt-0">
+              {activeTab === 'upload' ? (
+                <div className="space-y-6">
+                  {/* Dropzone */}
+                  {!imagePreview ? (
+                    <div
+                      className={`dropzone ${dragActive ? 'border-primary bg-primary/10' : ''}`}
+                      onDragEnter={handleDrag}
+                      onDragLeave={handleDrag}
+                      onDragOver={handleDrag}
+                      onDrop={handleDrop}
+                      onClick={() => document.getElementById('file-input').click()}
+                      data-testid="dropzone"
+                    >
+                      <input
+                        id="file-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileInput}
+                        className="hidden"
+                        data-testid="file-input"
+                      />
+                      <div className="dropzone-icon text-primary/50 transition-all duration-300">
+                        <Upload className="w-16 h-16 mx-auto mb-4" />
+                      </div>
+                      <h3 className="font-outfit font-semibold text-lg mb-2">
+                        Drop your receipt here
+                      </h3>
+                      <p className="text-muted-foreground text-sm mb-4">
+                        or click to browse files
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Supports JPG, PNG, WEBP • Max 10MB
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative rounded-2xl overflow-hidden bg-muted/30">
+                      <img
+                        src={imagePreview}
+                        alt="Receipt preview"
+                        className="w-full max-h-[400px] object-contain mx-auto"
+                        data-testid="image-preview"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-4 right-4 rounded-full"
+                        onClick={clearImage}
+                        data-testid="clear-image"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Extract Button for images */}
+                  <Button
+                    className="w-full h-14 rounded-xl font-outfit font-bold text-lg"
+                    onClick={handleExtract}
+                    disabled={loading || !imageFile}
+                    data-testid="extract-btn"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Extracting items...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 mr-2" />
+                        Extract Items from Receipt
+                      </>
+                    )}
+                  </Button>
+
+                  <p className="text-center text-sm text-muted-foreground">
+                    Items will be extracted for you to review and edit before analysis
                   </p>
                 </div>
               ) : (
-                <div className="relative rounded-2xl overflow-hidden bg-muted/30">
-                  <img
-                    src={imagePreview}
-                    alt="Receipt preview"
-                    className="w-full max-h-[400px] object-contain mx-auto"
-                    data-testid="image-preview"
-                  />
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    className="absolute top-4 right-4 rounded-full"
-                    onClick={clearImage}
-                    data-testid="clear-image"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <CardDescription>
-                  Paste or type your receipt items with prices
-                </CardDescription>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setReceiptText(sampleReceipt)}
-                  data-testid="load-sample"
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Load Sample
-                </Button>
-              </div>
-              <Textarea
-                placeholder={`Enter receipt items with prices, e.g.:
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <CardDescription>
+                      Paste or type your receipt items with prices
+                    </CardDescription>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setReceiptText(sampleReceipt)}
+                      data-testid="load-sample"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Load Sample
+                    </Button>
+                  </div>
+                  <Textarea
+                    placeholder={`Enter receipt items with prices, e.g.:
 Eggs 12ct - $3.49
 Milk 1 gallon - $4.29
 Bread - $2.99
 Chicken 2lb - $8.99`}
-                value={receiptText}
-                onChange={(e) => setReceiptText(e.target.value)}
-                className="min-h-[300px] font-mono text-sm rounded-xl"
-                data-testid="receipt-text"
-              />
-            </div>
-          )}
+                    value={receiptText}
+                    onChange={(e) => setReceiptText(e.target.value)}
+                    className="min-h-[300px] font-mono text-sm rounded-xl"
+                    data-testid="receipt-text"
+                  />
 
-          {/* Analyze Button */}
-          <Button
-            className="w-full h-14 rounded-xl font-outfit font-bold text-lg mt-6"
-            onClick={handleAnalyze}
-            disabled={loading || (activeTab === 'upload' ? !imageFile : !receiptText.trim())}
-            data-testid="analyze-btn"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5 mr-2" />
-                Analyze Receipt
-              </>
-            )}
-          </Button>
+                  {/* Analyze Button for text */}
+                  <Button
+                    className="w-full h-14 rounded-xl font-outfit font-bold text-lg"
+                    onClick={handleAnalyzeText}
+                    disabled={loading || !receiptText.trim()}
+                    data-testid="analyze-text-btn"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 mr-2" />
+                        Analyze Receipt
+                      </>
+                    )}
+                  </Button>
 
-          {/* Info Text */}
-          <p className="text-center text-sm text-muted-foreground mt-4">
-            Our AI will extract items, estimate calories, and calculate value per dollar
-          </p>
-        </CardContent>
+                  <p className="text-center text-sm text-muted-foreground">
+                    Our AI will extract items, estimate calories, and calculate value per dollar
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </>
+        )}
       </Card>
     </div>
   );
