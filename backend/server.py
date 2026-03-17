@@ -610,6 +610,28 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
+@api_router.get("/food-database")
+async def get_food_database(q: str = ""):
+    """Search the calorie database for food items"""
+    results = []
+    search_term = q.lower().strip()
+    
+    for name, data in CALORIE_DATABASE.items():
+        if not search_term or search_term in name:
+            total_calories = data["calories_per_unit"] * data["typical_quantity"]
+            results.append({
+                "name": name.title(),
+                "calories": total_calories,
+                "quantity": f"{data['typical_quantity']} {data['unit']}s",
+                "calories_per_unit": data["calories_per_unit"],
+                "unit": data["unit"]
+            })
+    
+    # Sort by relevance (exact match first, then alphabetical)
+    results.sort(key=lambda x: (0 if x["name"].lower() == search_term else 1, x["name"]))
+    
+    return {"items": results[:15]}  # Limit to 15 results
+
 # Include router and middleware
 app.include_router(api_router)
 

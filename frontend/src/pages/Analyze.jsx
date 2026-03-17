@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -6,7 +6,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
   Camera, 
   FileText, 
@@ -17,10 +17,103 @@ import {
   Pencil,
   Trash2,
   Check,
-  ArrowLeft
+  ArrowLeft,
+  Plus,
+  Search
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Autocomplete Input Component
+const FoodAutocomplete = ({ value, onChange, onSelect, placeholder }) => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const searchFoods = async (query) => {
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API}/food-database?q=${encodeURIComponent(query)}`);
+      setSuggestions(response.data.items || []);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    onChange(newValue);
+    setShowSuggestions(true);
+    searchFoods(newValue);
+  };
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="relative">
+        <Input
+          value={value}
+          onChange={handleInputChange}
+          onFocus={() => value.length >= 2 && setShowSuggestions(true)}
+          placeholder={placeholder}
+          className="font-medium pr-8"
+          data-testid="food-autocomplete-input"
+        />
+        {loading ? (
+          <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+        ) : (
+          <Search className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        )}
+      </div>
+      
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg max-h-60 overflow-auto">
+          {suggestions.map((item, index) => (
+            <button
+              key={index}
+              className="w-full px-4 py-3 text-left hover:bg-muted/50 transition-colors flex items-center justify-between border-b border-border/50 last:border-0"
+              onClick={() => handleSelect(item)}
+              data-testid={`suggestion-${index}`}
+            >
+              <div>
+                <p className="font-medium text-sm">{item.name}</p>
+                <p className="text-xs text-muted-foreground">{item.quantity}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-mono text-sm text-primary font-semibold">{item.calories} cal</p>
+                <p className="text-xs text-muted-foreground">{item.calories_per_unit} cal/{item.unit}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function Analyze() {
   const [activeTab, setActiveTab] = useState('upload');
@@ -31,6 +124,8 @@ export default function Analyze() {
   const [dragActive, setDragActive] = useState(false);
   const [extractedItems, setExtractedItems] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItem, setNewItem] = useState({ name: '', calories: 0, price: 0, quantity: '' });
   const navigate = useNavigate();
 
   const handleDrag = useCallback((e) => {
@@ -125,6 +220,18 @@ export default function Analyze() {
     setExtractedItems(updated);
   };
 
+  // Handle autocomplete selection in edit mode
+  const handleEditAutocompleteSelect = (index, item) => {
+    const updated = [...extractedItems];
+    updated[index] = {
+      ...updated[index],
+      name: item.name,
+      calories: item.calories,
+      quantity: item.quantity
+    };
+    setExtractedItems(updated);
+  };
+
   // Handle item delete
   const handleDeleteItem = (index) => {
     const updated = extractedItems.filter((_, i) => i !== index);
@@ -133,6 +240,39 @@ export default function Analyze() {
       setExtractedItems(null);
       toast.info('All items removed. Upload a new receipt or add items manually.');
     }
+  };
+
+  // Add new item manually
+  const handleAddItem = () => {
+    if (!newItem.name || newItem.price <= 0) {
+      toast.error('Please enter item name and price');
+      return;
+    }
+    
+    const itemToAdd = {
+      ...newItem,
+      calories: newItem.calories || 100
+    };
+    
+    if (extractedItems) {
+      setExtractedItems([...extractedItems, itemToAdd]);
+    } else {
+      setExtractedItems([itemToAdd]);
+    }
+    
+    setNewItem({ name: '', calories: 0, price: 0, quantity: '' });
+    setShowAddItem(false);
+    toast.success('Item added');
+  };
+
+  // Handle autocomplete selection for new item
+  const handleNewItemAutocompleteSelect = (item) => {
+    setNewItem({
+      ...newItem,
+      name: item.name,
+      calories: item.calories,
+      quantity: item.quantity
+    });
   };
 
   // Submit edited items for final analysis
@@ -157,7 +297,7 @@ export default function Analyze() {
     }
   };
 
-  // Direct analysis for text input (no edit step needed since user typed it)
+  // Direct analysis for text input
   const handleAnalyzeText = async () => {
     if (!receiptText.trim()) {
       toast.error('Please enter receipt text');
@@ -201,6 +341,7 @@ Total: $44.46`;
   const handleBackToUpload = () => {
     setExtractedItems(null);
     setEditingIndex(null);
+    setShowAddItem(false);
   };
 
   return (
@@ -241,9 +382,67 @@ Total: $44.46`;
                     </CardDescription>
                   </div>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddItem(true)}
+                  data-testid="add-item-btn"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Item
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {/* Add New Item Form */}
+              {showAddItem && (
+                <div className="mb-4 p-4 rounded-xl bg-primary/5 border border-primary/20">
+                  <p className="font-outfit font-medium text-sm mb-3">Add New Item</p>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <div className="md:col-span-2">
+                      <FoodAutocomplete
+                        value={newItem.name}
+                        onChange={(val) => setNewItem({ ...newItem, name: val })}
+                        onSelect={handleNewItemAutocompleteSelect}
+                        placeholder="Search or type item name..."
+                      />
+                    </div>
+                    <Input
+                      type="number"
+                      value={newItem.calories || ''}
+                      onChange={(e) => setNewItem({ ...newItem, calories: parseInt(e.target.value) || 0 })}
+                      placeholder="Calories"
+                      className="font-mono"
+                      data-testid="new-item-calories"
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={newItem.price || ''}
+                      onChange={(e) => setNewItem({ ...newItem, price: parseFloat(e.target.value) || 0 })}
+                      placeholder="Price ($)"
+                      className="font-mono"
+                      data-testid="new-item-price"
+                    />
+                    <div className="flex gap-2">
+                      <Button onClick={handleAddItem} size="sm" className="flex-1" data-testid="confirm-add-item">
+                        <Check className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowAddItem(false)} data-testid="cancel-add-item">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <Input
+                    value={newItem.quantity}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
+                    placeholder="Quantity (e.g., 12 eggs, 1 gallon)"
+                    className="mt-2"
+                    data-testid="new-item-quantity"
+                  />
+                </div>
+              )}
+
               <div className="space-y-3 mb-6">
                 {extractedItems.map((item, index) => (
                   <div
@@ -253,15 +452,16 @@ Total: $44.46`;
                   >
                     {editingIndex === index ? (
                       // Edit mode
-                      <>
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3">
-                          <Input
-                            value={item.name}
-                            onChange={(e) => handleItemChange(index, 'name', e.target.value)}
-                            placeholder="Item name"
-                            className="font-medium"
-                            data-testid={`edit-name-${index}`}
-                          />
+                      <div className="flex-1 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                          <div className="md:col-span-1">
+                            <FoodAutocomplete
+                              value={item.name}
+                              onChange={(val) => handleItemChange(index, 'name', val)}
+                              onSelect={(selected) => handleEditAutocompleteSelect(index, selected)}
+                              placeholder="Item name"
+                            />
+                          </div>
                           <Input
                             type="number"
                             value={item.calories}
@@ -290,7 +490,14 @@ Total: $44.46`;
                             Done
                           </Button>
                         </div>
-                      </>
+                        <Input
+                          value={item.quantity || ''}
+                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                          placeholder="Quantity (e.g., 12 eggs, 1 gallon)"
+                          className="w-full"
+                          data-testid={`edit-quantity-${index}`}
+                        />
+                      </div>
                     ) : (
                       // View mode
                       <>
