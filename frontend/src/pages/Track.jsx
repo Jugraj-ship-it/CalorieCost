@@ -31,7 +31,7 @@ import {
   Loader2,
   UtensilsCrossed,
   TrendingUp,
-  ChevronRight
+  Scale
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -112,10 +112,11 @@ const FoodAutocomplete = ({ value, onChange, onSelect, placeholder }) => {
             >
               <div>
                 <p className="font-medium text-sm">{item.name}</p>
-                <p className="text-xs text-muted-foreground">{item.quantity}</p>
+                <p className="text-xs text-muted-foreground">~{item.typical_grams}g typical</p>
               </div>
               <div className="text-right">
-                <p className="font-mono text-sm text-primary font-semibold">{item.calories_per_unit} cal/{item.unit}</p>
+                <p className="font-mono text-sm text-primary font-semibold">{item.calories_per_100g} cal</p>
+                <p className="text-xs text-muted-foreground">per 100g</p>
               </div>
             </button>
           ))}
@@ -132,18 +133,16 @@ export default function Track() {
   const [receipts, setReceipts] = useState([]);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [receiptItems, setReceiptItems] = useState([]);
-  const [showAddForm, setShowAddForm] = useState(false);
   const [addSource, setAddSource] = useState('database'); // 'database' or 'receipt'
   const [submitting, setSubmitting] = useState(false);
   
-  // Form state for adding meals
+  // Form state for adding meals - gram-based
   const [formData, setFormData] = useState({
     item_name: '',
-    calories_per_unit: 0,
-    total_units: 1,
-    units_consumed: 1,
-    total_price: 0,
-    unit_name: 'serving'
+    calories_per_100g: 0,
+    total_grams: 100,
+    grams_consumed: 100,
+    total_price: 0
   });
 
   useEffect(() => {
@@ -195,26 +194,25 @@ export default function Track() {
     setFormData({
       ...formData,
       item_name: item.name,
-      calories_per_unit: item.calories_per_unit,
-      total_units: parseFloat(item.quantity) || 1,
-      unit_name: item.unit
+      calories_per_100g: item.calories_per_100g,
+      total_grams: item.typical_grams || 100,
+      grams_consumed: 100 // Default to 100g serving
     });
   };
 
   const handleReceiptItemSelect = (item) => {
     setFormData({
       item_name: item.name,
-      calories_per_unit: item.calories_per_unit,
-      total_units: item.total_units,
-      units_consumed: 1,
-      total_price: item.total_price,
-      unit_name: item.unit_name
+      calories_per_100g: item.calories_per_100g,
+      total_grams: item.total_grams,
+      grams_consumed: 100, // Default to 100g serving
+      total_price: item.total_price
     });
   };
 
   const handleLogMeal = async () => {
-    if (!formData.item_name || formData.units_consumed <= 0) {
-      toast.error('Please fill in item name and quantity');
+    if (!formData.item_name || formData.grams_consumed <= 0) {
+      toast.error('Please fill in item name and grams consumed');
       return;
     }
 
@@ -222,13 +220,12 @@ export default function Track() {
     try {
       await axios.post(`${API}/meals/log`, {
         item_name: formData.item_name,
-        calories_per_unit: formData.calories_per_unit,
-        total_units: formData.total_units,
-        units_consumed: formData.units_consumed,
+        calories_per_100g: formData.calories_per_100g,
+        total_grams: formData.total_grams,
+        grams_consumed: formData.grams_consumed,
         total_price: formData.total_price,
         source: addSource,
-        source_id: selectedReceipt,
-        unit_name: formData.unit_name
+        source_id: selectedReceipt
       });
       
       toast.success('Meal logged!');
@@ -254,20 +251,19 @@ export default function Track() {
   const resetForm = () => {
     setFormData({
       item_name: '',
-      calories_per_unit: 0,
-      total_units: 1,
-      units_consumed: 1,
-      total_price: 0,
-      unit_name: 'serving'
+      calories_per_100g: 0,
+      total_grams: 100,
+      grams_consumed: 100,
+      total_price: 0
     });
-    setShowAddForm(false);
     setSelectedReceipt(null);
     setReceiptItems([]);
   };
 
-  const calculatedCalories = Math.round(formData.calories_per_unit * formData.units_consumed);
-  const calculatedCost = formData.total_units > 0 
-    ? ((formData.total_price / formData.total_units) * formData.units_consumed).toFixed(2)
+  // Calculate preview values
+  const calculatedCalories = Math.round((formData.grams_consumed / 100) * formData.calories_per_100g);
+  const calculatedCost = formData.total_grams > 0 
+    ? ((formData.total_price / formData.total_grams) * formData.grams_consumed).toFixed(2)
     : '0.00';
 
   return (
@@ -276,7 +272,7 @@ export default function Track() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
           <h1 className="font-outfit font-bold text-3xl md:text-4xl tracking-tight">Daily Tracker</h1>
-          <p className="text-muted-foreground font-inter mt-1">Track your meals and monitor daily spending</p>
+          <p className="text-muted-foreground font-inter mt-1">Track your meals by weight for accurate cost calculation</p>
         </div>
         <div className="flex items-center gap-3">
           <Popover>
@@ -360,10 +356,10 @@ export default function Track() {
         <Card className="border-border/50 rounded-2xl lg:col-span-1" data-testid="add-meal-card">
           <CardHeader>
             <CardTitle className="font-outfit flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              Log Meal
+              <Scale className="w-5 h-5" />
+              Log by Weight
             </CardTitle>
-            <CardDescription>Add food from receipts or database</CardDescription>
+            <CardDescription>Track by grams for accurate cost per serving</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Source Selection */}
@@ -402,17 +398,17 @@ export default function Track() {
                 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Cal/Unit</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Cal per 100g</label>
                     <Input
                       type="number"
-                      value={formData.calories_per_unit || ''}
-                      onChange={(e) => setFormData({ ...formData, calories_per_unit: parseInt(e.target.value) || 0 })}
+                      value={formData.calories_per_100g || ''}
+                      onChange={(e) => setFormData({ ...formData, calories_per_100g: parseInt(e.target.value) || 0 })}
                       className="font-mono"
-                      data-testid="input-cal-per-unit"
+                      data-testid="input-cal-per-100g"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Price ($)</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Total Price ($)</label>
                     <Input
                       type="number"
                       step="0.01"
@@ -426,23 +422,23 @@ export default function Track() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Total Units</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Total Weight (g)</label>
                     <Input
                       type="number"
-                      value={formData.total_units || ''}
-                      onChange={(e) => setFormData({ ...formData, total_units: parseFloat(e.target.value) || 1 })}
+                      value={formData.total_grams || ''}
+                      onChange={(e) => setFormData({ ...formData, total_grams: parseFloat(e.target.value) || 100 })}
                       className="font-mono"
-                      data-testid="input-total-units"
+                      data-testid="input-total-grams"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Units Eaten</label>
+                    <label className="text-xs text-muted-foreground mb-1 block font-semibold text-foreground">Grams Eaten</label>
                     <Input
                       type="number"
-                      value={formData.units_consumed || ''}
-                      onChange={(e) => setFormData({ ...formData, units_consumed: parseFloat(e.target.value) || 0 })}
-                      className="font-mono"
-                      data-testid="input-units-consumed"
+                      value={formData.grams_consumed || ''}
+                      onChange={(e) => setFormData({ ...formData, grams_consumed: parseFloat(e.target.value) || 0 })}
+                      className="font-mono border-primary"
+                      data-testid="input-grams-consumed"
                     />
                   </div>
                 </div>
@@ -478,7 +474,7 @@ export default function Track() {
                           <span className="font-medium text-sm">{item.name}</span>
                           <span className="text-xs text-muted-foreground">${item.total_price}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{item.total_units} {item.unit_name}s • {item.calories_per_unit} cal each</p>
+                        <p className="text-xs text-muted-foreground">{item.total_grams}g total • {item.calories_per_100g} cal/100g</p>
                       </button>
                     ))}
                   </div>
@@ -486,13 +482,14 @@ export default function Track() {
 
                 {formData.item_name && addSource === 'receipt' && (
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Units Eaten</label>
+                    <label className="text-xs font-semibold text-foreground mb-1 block">Grams Eaten</label>
                     <Input
                       type="number"
-                      value={formData.units_consumed || ''}
-                      onChange={(e) => setFormData({ ...formData, units_consumed: parseFloat(e.target.value) || 0 })}
-                      className="font-mono"
-                      data-testid="receipt-units-consumed"
+                      value={formData.grams_consumed || ''}
+                      onChange={(e) => setFormData({ ...formData, grams_consumed: parseFloat(e.target.value) || 0 })}
+                      className="font-mono border-primary"
+                      placeholder="How many grams did you eat?"
+                      data-testid="receipt-grams-consumed"
                     />
                   </div>
                 )}
@@ -502,14 +499,22 @@ export default function Track() {
             {/* Calculated Preview */}
             {formData.item_name && (
               <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                <p className="text-sm font-medium mb-2">{formData.item_name}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">{formData.item_name}</p>
+                  <span className="text-xs text-muted-foreground">{formData.grams_consumed}g serving</span>
+                </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Calories:</span>
-                  <span className="font-mono font-bold text-primary">{calculatedCalories}</span>
+                  <span className="font-mono font-bold text-primary">{calculatedCalories} cal</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Cost:</span>
                   <span className="font-mono font-bold text-accent">${calculatedCost}</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-border/50">
+                  <p className="text-xs text-muted-foreground">
+                    {formData.grams_consumed}g of {formData.total_grams}g total @ ${formData.total_price}
+                  </p>
                 </div>
               </div>
             )}
@@ -517,7 +522,7 @@ export default function Track() {
             <Button
               className="w-full"
               onClick={handleLogMeal}
-              disabled={!formData.item_name || formData.units_consumed <= 0 || submitting}
+              disabled={!formData.item_name || formData.grams_consumed <= 0 || submitting}
               data-testid="log-meal-btn"
             >
               {submitting ? (
@@ -572,8 +577,7 @@ export default function Track() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {entry.units_consumed} {entry.unit_name || 'serving'}
-                        {entry.units_consumed !== 1 ? 's' : ''} • {format(new Date(entry.timestamp), 'h:mm a')}
+                        {entry.grams_consumed}g serving • {format(new Date(entry.timestamp), 'h:mm a')}
                       </p>
                     </div>
                     <div className="flex items-center gap-4">

@@ -106,22 +106,21 @@ class AnalysisHistory(BaseModel):
 
 class MealEntryCreate(BaseModel):
     item_name: str
-    calories_per_unit: int
-    total_units: float
-    units_consumed: float
-    total_price: float
+    calories_per_100g: int  # Calories per 100 grams
+    total_grams: float  # Total weight of the item purchased
+    grams_consumed: float  # How many grams eaten
+    total_price: float  # Price of the entire item
     source: str  # 'receipt' or 'database'
     source_id: Optional[str] = None  # analysis_id if from receipt
-    unit_name: Optional[str] = None
 
 class MealEntry(BaseModel):
     id: str
     item_name: str
     calories_consumed: int
     cost: float
-    units_consumed: float
-    total_units: float
-    unit_name: Optional[str] = None
+    grams_consumed: float
+    total_grams: float
+    calories_per_100g: int
     source: str
     timestamp: str
 
@@ -640,11 +639,14 @@ async def delete_analysis(analysis_id: str, current_user: dict = Depends(get_cur
 
 @api_router.post("/meals/log", response_model=MealEntry)
 async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_current_user)):
-    """Log a meal entry with proportional cost calculation"""
+    """Log a meal entry with gram-based proportional cost calculation"""
     
-    # Calculate proportional values
-    proportion = data.units_consumed / data.total_units if data.total_units > 0 else 0
-    calories_consumed = int(data.calories_per_unit * data.units_consumed)
+    # Calculate proportional values based on grams
+    # Calories = (grams consumed / 100) × calories per 100g
+    calories_consumed = int((data.grams_consumed / 100) * data.calories_per_100g)
+    
+    # Cost = (grams consumed / total grams) × total price
+    proportion = data.grams_consumed / data.total_grams if data.total_grams > 0 else 0
     cost = round(data.total_price * proportion, 2)
     
     entry_id = str(uuid.uuid4())
@@ -654,10 +656,9 @@ async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_curre
         "item_name": data.item_name,
         "calories_consumed": calories_consumed,
         "cost": cost,
-        "units_consumed": data.units_consumed,
-        "total_units": data.total_units,
-        "unit_name": data.unit_name,
-        "calories_per_unit": data.calories_per_unit,
+        "grams_consumed": data.grams_consumed,
+        "total_grams": data.total_grams,
+        "calories_per_100g": data.calories_per_100g,
         "total_price": data.total_price,
         "source": data.source,
         "source_id": data.source_id,
@@ -672,9 +673,9 @@ async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_curre
         item_name=data.item_name,
         calories_consumed=calories_consumed,
         cost=cost,
-        units_consumed=data.units_consumed,
-        total_units=data.total_units,
-        unit_name=data.unit_name,
+        grams_consumed=data.grams_consumed,
+        total_grams=data.total_grams,
+        calories_per_100g=data.calories_per_100g,
         source=data.source,
         timestamp=entry["timestamp"]
     )
@@ -706,9 +707,9 @@ async def get_meals_by_date(date: str, current_user: dict) -> DailySummary:
             item_name=e["item_name"],
             calories_consumed=e["calories_consumed"],
             cost=e["cost"],
-            units_consumed=e["units_consumed"],
-            total_units=e["total_units"],
-            unit_name=e.get("unit_name"),
+            grams_consumed=e.get("grams_consumed", e.get("units_consumed", 0) * 100),  # Backwards compat
+            total_grams=e.get("total_grams", e.get("total_units", 1) * 100),  # Backwards compat
+            calories_per_100g=e.get("calories_per_100g", e.get("calories_per_unit", 0)),  # Backwards compat
             source=e["source"],
             timestamp=e["timestamp"]
         )
@@ -795,7 +796,7 @@ async def delete_meal_entry(entry_id: str, current_user: dict = Depends(get_curr
 
 @api_router.get("/meals/receipt-items/{analysis_id}")
 async def get_receipt_items_for_tracking(analysis_id: str, current_user: dict = Depends(get_current_user)):
-    """Get items from a receipt analysis for meal tracking"""
+    """Get items from a receipt analysis for meal tracking - returns gram-based data"""
     analysis = await db.analyses.find_one(
         {"id": analysis_id, "user_id": current_user["id"]},
         {"_id": 0, "items": 1, "created_at": 1}
@@ -804,32 +805,49 @@ async def get_receipt_items_for_tracking(analysis_id: str, current_user: dict = 
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
     
-    # Transform items for tracking (estimate units from quantity string)
+    # Estimate grams and calories per 100g from item data
     tracking_items = []
     for item in analysis.get("items", []):
-        # Try to parse quantity to get unit count
-        quantity_str = item.get("quantity", "")
-        total_units = 1.0
-        unit_name = "serving"
+        quantity_str = item.get("quantity", "").lower()
         
-        # Simple parsing of common quantity formats
+        # Estimate total grams based on common patterns
+        total_grams = 100.0  # Default
+        
         import re
-        qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(\w+)?', quantity_str)
-        if qty_match:
-            total_units = float(qty_match.group(1))
-            if qty_match.group(2):
-                unit_name = qty_match.group(2)
         
-        calories_per_unit = item["calories"] / total_units if total_units > 0 else item["calories"]
+        # Check for weight patterns
+        kg_match = re.search(r'(\d+(?:\.\d+)?)\s*kg', quantity_str)
+        lb_match = re.search(r'(\d+(?:\.\d+)?)\s*lb', quantity_str)
+        g_match = re.search(r'(\d+(?:\.\d+)?)\s*g(?:ram)?', quantity_str)
+        oz_match = re.search(r'(\d+(?:\.\d+)?)\s*oz', quantity_str)
+        
+        if kg_match:
+            total_grams = float(kg_match.group(1)) * 1000
+        elif lb_match:
+            total_grams = float(lb_match.group(1)) * 454
+        elif g_match:
+            total_grams = float(g_match.group(1))
+        elif oz_match:
+            total_grams = float(oz_match.group(1)) * 28.35
+        elif 'gallon' in quantity_str:
+            total_grams = 3785  # 1 gallon of milk
+        elif 'dozen' in quantity_str or '12' in quantity_str:
+            if 'egg' in item.get("name", "").lower():
+                total_grams = 720  # 12 eggs × 60g
+        else:
+            # Estimate based on calories (rough approximation)
+            total_grams = max(100, item["calories"] / 2)  # Assume ~200 cal/100g average
+        
+        # Calculate calories per 100g from total
+        calories_per_100g = int((item["calories"] / total_grams) * 100) if total_grams > 0 else 100
         
         tracking_items.append({
             "name": item["name"],
             "total_calories": item["calories"],
             "total_price": item["price"],
-            "total_units": total_units,
-            "unit_name": unit_name,
-            "calories_per_unit": round(calories_per_unit),
-            "quantity": quantity_str
+            "total_grams": round(total_grams),
+            "calories_per_100g": calories_per_100g,
+            "quantity": quantity_str or f"~{round(total_grams)}g"
         })
     
     return {
@@ -850,19 +868,82 @@ async def health_check():
 
 @api_router.get("/food-database")
 async def get_food_database(q: str = ""):
-    """Search the calorie database for food items"""
+    """Search the calorie database for food items - returns calories per 100g"""
     results = []
     search_term = q.lower().strip()
     
-    for name, data in CALORIE_DATABASE.items():
+    # Standard calorie densities per 100g for common foods
+    CALORIE_PER_100G = {
+        "eggs": 155,
+        "milk": 42,
+        "cheese": 402,
+        "butter": 717,
+        "yogurt": 59,
+        "cream cheese": 342,
+        "bread": 265,
+        "rice": 130,
+        "pasta": 131,
+        "oatmeal": 68,
+        "cereal": 379,
+        "tortilla": 218,
+        "bagel": 257,
+        "chicken": 165,
+        "beef": 250,
+        "pork": 242,
+        "ground beef": 254,
+        "bacon": 541,
+        "sausage": 301,
+        "turkey": 135,
+        "ham": 145,
+        "fish": 206,
+        "salmon": 208,
+        "tuna": 132,
+        "apple": 52,
+        "banana": 89,
+        "orange": 47,
+        "grapes": 69,
+        "strawberries": 32,
+        "blueberries": 57,
+        "potato": 77,
+        "tomato": 18,
+        "lettuce": 15,
+        "carrot": 41,
+        "broccoli": 34,
+        "onion": 40,
+        "spinach": 23,
+        "beans": 127,
+        "soup": 30,
+        "peanut butter": 588,
+        "juice": 45,
+        "soda": 41,
+        "coffee": 1,
+        "chips": 536,
+        "cookies": 488,
+        "crackers": 421,
+        "nuts": 607,
+        "almonds": 579,
+    }
+    
+    for name, cal_per_100g in CALORIE_PER_100G.items():
         if not search_term or search_term in name:
-            total_calories = data["calories_per_unit"] * data["typical_quantity"]
+            # Estimate typical package size in grams
+            typical_grams = CALORIE_DATABASE.get(name, {}).get("typical_quantity", 1) * 100
+            if name in ["eggs"]:
+                typical_grams = 720  # 12 eggs × 60g each
+            elif name in ["milk"]:
+                typical_grams = 3785  # 1 gallon
+            elif name in ["bread"]:
+                typical_grams = 500  # typical loaf
+            elif name in ["rice", "pasta"]:
+                typical_grams = 907  # 2 lb bag
+            elif name in ["chicken", "beef", "pork", "ground beef"]:
+                typical_grams = 454  # 1 lb
+            
             results.append({
                 "name": name.title(),
-                "calories": total_calories,
-                "quantity": f"{data['typical_quantity']} {data['unit']}s",
-                "calories_per_unit": data["calories_per_unit"],
-                "unit": data["unit"]
+                "calories_per_100g": cal_per_100g,
+                "typical_grams": typical_grams,
+                "typical_serving_grams": 100,  # Default serving size
             })
     
     # Sort by relevance (exact match first, then alphabetical)
