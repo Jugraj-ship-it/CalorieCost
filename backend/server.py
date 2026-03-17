@@ -257,7 +257,7 @@ Be precise with calorie estimates based on standard nutritional data. For items 
             image_content = ImageContent(image_base64=image_base64)
             message = UserMessage(
                 text="Analyze this grocery receipt image. Extract all food items with prices and estimate calories for each. Return JSON only.",
-                image_contents=[image_content]
+                file_contents=[image_content]
             )
         else:
             message = UserMessage(
