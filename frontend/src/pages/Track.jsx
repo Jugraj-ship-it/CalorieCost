@@ -7,6 +7,15 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
+import { Badge } from '../components/ui/badge';
+import { Calendar } from '../components/ui/calendar';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '../components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -14,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { Calendar } from '../components/ui/calendar';
 import {
   Popover,
   PopoverContent,
@@ -26,128 +34,55 @@ import {
   DollarSign,
   Trash2,
   CalendarIcon,
-  Receipt,
   Search,
   Loader2,
   UtensilsCrossed,
   TrendingUp,
-  Scale
+  Scale,
+  Beef,
+  Wheat,
+  Droplets,
+  Leaf,
+  Cookie,
+  X
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// Food Autocomplete Component
-const FoodAutocomplete = ({ value, onChange, onSelect, placeholder }) => {
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const wrapperRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const searchFoods = async (query) => {
-    if (query.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API}/food-database?q=${encodeURIComponent(query)}`);
-      setSuggestions(response.data.items || []);
-    } catch (error) {
-      setSuggestions([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleInputChange = (e) => {
-    const newValue = e.target.value;
-    onChange(newValue);
-    setShowSuggestions(true);
-    searchFoods(newValue);
-  };
-
-  const handleSelect = (item) => {
-    onSelect(item);
-    setShowSuggestions(false);
-    setSuggestions([]);
-  };
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={handleInputChange}
-          onFocus={() => value.length >= 2 && setShowSuggestions(true)}
-          placeholder={placeholder}
-          className="pr-8"
-          data-testid="food-search-input"
-        />
-        {loading ? (
-          <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
-        ) : (
-          <Search className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        )}
-      </div>
-      
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg max-h-60 overflow-auto">
-          {suggestions.map((item, index) => (
-            <button
-              key={index}
-              className="w-full px-4 py-3 text-left hover:bg-muted/50 transition-colors flex items-center justify-between border-b border-border/50 last:border-0"
-              onClick={() => handleSelect(item)}
-              data-testid={`food-suggestion-${index}`}
-            >
-              <div>
-                <p className="font-medium text-sm">{item.name}</p>
-                <p className="text-xs text-muted-foreground">~{item.typical_grams}g typical</p>
-              </div>
-              <div className="text-right">
-                <p className="font-mono text-sm text-primary font-semibold">{item.calories_per_100g} cal</p>
-                <p className="text-xs text-muted-foreground">per 100g</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+const MEAL_TYPES = [
+  { value: 'breakfast', label: 'Breakfast', icon: '🌅' },
+  { value: 'lunch', label: 'Lunch', icon: '☀️' },
+  { value: 'dinner', label: 'Dinner', icon: '🌙' },
+  { value: 'snack', label: 'Snack', icon: '🍿' },
+];
 
 export default function Track() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dailyData, setDailyData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [receipts, setReceipts] = useState([]);
-  const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [receiptItems, setReceiptItems] = useState([]);
-  const [addSource, setAddSource] = useState('database'); // 'database' or 'receipt'
+  const [viewMode, setViewMode] = useState('chronological'); // 'chronological' or 'by-meal'
+  
+  // Add food modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedFood, setSelectedFood] = useState(null);
+  const [foodDetails, setFoodDetails] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
-  // Form state for adding meals - gram-based
-  const [formData, setFormData] = useState({
-    item_name: '',
-    calories_per_100g: 0,
-    total_grams: 100,
-    grams_consumed: 100,
-    total_price: 0
-  });
+  // Form state
+  const [selectedServing, setSelectedServing] = useState(null);
+  const [customGrams, setCustomGrams] = useState('');
+  const [mealType, setMealType] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
+  const [totalGramsPurchased, setTotalGramsPurchased] = useState('');
+
+  const searchTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetchDailyData();
-    fetchReceipts();
   }, [selectedDate]);
 
   const fetchDailyData = async () => {
@@ -163,74 +98,110 @@ export default function Track() {
     }
   };
 
-  const fetchReceipts = async () => {
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const response = await axios.get(`${API}/food-search?q=${encodeURIComponent(query)}`);
+        setSearchResults(response.data.items || []);
+      } catch (error) {
+        toast.error('Search failed');
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  };
+
+  const handleSelectFood = async (food) => {
+    setSelectedFood(food);
+    setLoadingDetails(true);
+    setSearchResults([]);
+    setSearchQuery(food.name);
+    
     try {
-      const response = await axios.get(`${API}/analysis`);
-      setReceipts(response.data);
+      const response = await axios.get(`${API}/food/${food.fdc_id}`);
+      setFoodDetails(response.data);
+      // Set default serving if available
+      if (response.data.serving_sizes?.length > 0) {
+        setSelectedServing(response.data.serving_sizes[0]);
+      }
     } catch (error) {
-      console.error('Failed to fetch receipts');
+      toast.error('Failed to load food details');
+    } finally {
+      setLoadingDetails(false);
     }
   };
 
-  const fetchReceiptItems = async (analysisId) => {
-    try {
-      const response = await axios.get(`${API}/meals/receipt-items/${analysisId}`);
-      setReceiptItems(response.data.items);
-    } catch (error) {
-      toast.error('Failed to load receipt items');
-    }
+  const getServingGrams = () => {
+    if (customGrams) return parseFloat(customGrams);
+    if (selectedServing) return selectedServing.grams;
+    return 100;
   };
 
-  const handleReceiptSelect = (analysisId) => {
-    setSelectedReceipt(analysisId);
-    if (analysisId) {
-      fetchReceiptItems(analysisId);
-    } else {
-      setReceiptItems([]);
-    }
+  const calculateNutrients = () => {
+    if (!foodDetails) return null;
+    const grams = getServingGrams();
+    const multiplier = grams / 100;
+    const n = foodDetails.nutrients_per_100g;
+    
+    return {
+      calories: Math.round(n.calories * multiplier),
+      protein: (n.protein * multiplier).toFixed(1),
+      carbs: (n.carbs * multiplier).toFixed(1),
+      fat: (n.fat * multiplier).toFixed(1),
+      fiber: (n.fiber * multiplier).toFixed(1),
+      sugar: (n.sugar * multiplier).toFixed(1),
+    };
   };
 
-  const handleFoodSelect = (item) => {
-    setFormData({
-      ...formData,
-      item_name: item.name,
-      calories_per_100g: item.calories_per_100g,
-      total_grams: item.typical_grams || 100,
-      grams_consumed: 100 // Default to 100g serving
-    });
-  };
-
-  const handleReceiptItemSelect = (item) => {
-    setFormData({
-      item_name: item.name,
-      calories_per_100g: item.calories_per_100g,
-      total_grams: item.total_grams,
-      grams_consumed: 100, // Default to 100g serving
-      total_price: item.total_price
-    });
+  const calculateCost = () => {
+    if (!totalPrice || !totalGramsPurchased) return null;
+    const servingGrams = getServingGrams();
+    const cost = (parseFloat(totalPrice) / parseFloat(totalGramsPurchased)) * servingGrams;
+    return cost.toFixed(2);
   };
 
   const handleLogMeal = async () => {
-    if (!formData.item_name || formData.grams_consumed <= 0) {
-      toast.error('Please fill in item name and grams consumed');
-      return;
-    }
-
+    if (!foodDetails) return;
+    
+    const servingGrams = getServingGrams();
+    const servingDesc = customGrams 
+      ? `${customGrams}g` 
+      : selectedServing?.description || `${servingGrams}g`;
+    
     setSubmitting(true);
     try {
       await axios.post(`${API}/meals/log`, {
-        item_name: formData.item_name,
-        calories_per_100g: formData.calories_per_100g,
-        total_grams: formData.total_grams,
-        grams_consumed: formData.grams_consumed,
-        total_price: formData.total_price,
-        source: addSource,
-        source_id: selectedReceipt
+        item_name: foodDetails.name,
+        fdc_id: foodDetails.fdc_id,
+        calories_per_100g: foodDetails.nutrients_per_100g.calories,
+        protein_per_100g: foodDetails.nutrients_per_100g.protein,
+        carbs_per_100g: foodDetails.nutrients_per_100g.carbs,
+        fat_per_100g: foodDetails.nutrients_per_100g.fat,
+        fiber_per_100g: foodDetails.nutrients_per_100g.fiber,
+        sugar_per_100g: foodDetails.nutrients_per_100g.sugar,
+        serving_description: servingDesc,
+        serving_grams: servingGrams,
+        total_grams_purchased: parseFloat(totalGramsPurchased) || servingGrams,
+        total_price: parseFloat(totalPrice) || 0,
+        meal_type: mealType || null,
+        source: 'usda'
       });
       
       toast.success('Meal logged!');
       fetchDailyData();
-      resetForm();
+      resetModal();
     } catch (error) {
       toast.error('Failed to log meal');
     } finally {
@@ -248,23 +219,46 @@ export default function Track() {
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      item_name: '',
-      calories_per_100g: 0,
-      total_grams: 100,
-      grams_consumed: 100,
-      total_price: 0
-    });
-    setSelectedReceipt(null);
-    setReceiptItems([]);
+  const resetModal = () => {
+    setShowAddModal(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedFood(null);
+    setFoodDetails(null);
+    setSelectedServing(null);
+    setCustomGrams('');
+    setMealType('');
+    setTotalPrice('');
+    setTotalGramsPurchased('');
   };
 
-  // Calculate preview values
-  const calculatedCalories = Math.round((formData.grams_consumed / 100) * formData.calories_per_100g);
-  const calculatedCost = formData.total_grams > 0 
-    ? ((formData.total_price / formData.total_grams) * formData.grams_consumed).toFixed(2)
-    : '0.00';
+  const nutrients = calculateNutrients();
+  const cost = calculateCost();
+
+  const renderMealEntries = (entries, title, icon) => {
+    if (!entries || entries.length === 0) return null;
+    
+    const totalCal = entries.reduce((sum, e) => sum + e.calories, 0);
+    
+    return (
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">{icon}</span>
+          <h3 className="font-outfit font-semibold">{title}</h3>
+          <Badge variant="secondary" className="ml-auto">{totalCal} cal</Badge>
+        </div>
+        <div className="space-y-2">
+          {entries.map((entry) => (
+            <MealEntryCard 
+              key={entry.id} 
+              entry={entry} 
+              onDelete={() => handleDeleteEntry(entry.id)} 
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 md:px-8 py-8" data-testid="track-page">
@@ -272,7 +266,7 @@ export default function Track() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
           <h1 className="font-outfit font-bold text-3xl md:text-4xl tracking-tight">Daily Tracker</h1>
-          <p className="text-muted-foreground font-inter mt-1">Track your meals by weight for accurate cost calculation</p>
+          <p className="text-muted-foreground font-inter mt-1">Track nutrition with USDA-verified data</p>
         </div>
         <div className="flex items-center gap-3">
           <Popover>
@@ -294,314 +288,455 @@ export default function Track() {
           <Link to="/calendar" data-testid="view-calendar-link">
             <Button variant="outline" className="font-outfit">
               <TrendingUp className="w-4 h-4 mr-2" />
-              View Calendar
+              Calendar
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="border-border/50 rounded-2xl" data-testid="stat-calories">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Flame className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground font-inter">Total Calories</p>
-                <p className="font-mono text-2xl font-bold">
-                  {loading ? <Skeleton className="h-8 w-20" /> : dailyData?.total_calories.toLocaleString() || 0}
-                </p>
+      {/* Summary Card */}
+      <Card className="border-border/50 rounded-2xl mb-8" data-testid="summary-card">
+        <CardContent className="p-6">
+          {loading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-12 w-48" />
+              <div className="grid grid-cols-4 gap-4">
+                {[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <>
+              {/* Calories Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <p className="text-sm text-muted-foreground font-inter">Total Calories</p>
+                  <p className="font-mono text-4xl font-bold">{dailyData?.total_calories || 0}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Daily Cost</p>
+                  <p className="font-mono text-2xl font-bold text-accent">${dailyData?.total_cost?.toFixed(2) || '0.00'}</p>
+                </div>
+              </div>
 
-        <Card className="border-border/50 rounded-2xl" data-testid="stat-cost">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-accent" />
+              {/* Macro Bars */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <MacroCard 
+                  icon={<Beef className="w-4 h-4" />}
+                  label="Protein"
+                  value={dailyData?.total_protein || 0}
+                  unit="g"
+                  color="text-red-500"
+                  bgColor="bg-red-500/10"
+                />
+                <MacroCard 
+                  icon={<Wheat className="w-4 h-4" />}
+                  label="Carbs"
+                  value={dailyData?.total_carbs || 0}
+                  unit="g"
+                  color="text-amber-500"
+                  bgColor="bg-amber-500/10"
+                />
+                <MacroCard 
+                  icon={<Droplets className="w-4 h-4" />}
+                  label="Fat"
+                  value={dailyData?.total_fat || 0}
+                  unit="g"
+                  color="text-blue-500"
+                  bgColor="bg-blue-500/10"
+                />
+                <MacroCard 
+                  icon={<Leaf className="w-4 h-4" />}
+                  label="Fiber"
+                  value={dailyData?.total_fiber || 0}
+                  unit="g"
+                  color="text-green-500"
+                  bgColor="bg-green-500/10"
+                />
+                <MacroCard 
+                  icon={<Cookie className="w-4 h-4" />}
+                  label="Sugar"
+                  value={dailyData?.total_sugar || 0}
+                  unit="g"
+                  color="text-pink-500"
+                  bgColor="bg-pink-500/10"
+                />
+                <MacroCard 
+                  icon={<UtensilsCrossed className="w-4 h-4" />}
+                  label="Meals"
+                  value={dailyData?.meal_count || 0}
+                  unit=""
+                  color="text-primary"
+                  bgColor="bg-primary/10"
+                />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground font-inter">Total Cost</p>
-                <p className="font-mono text-2xl font-bold">
-                  {loading ? <Skeleton className="h-8 w-20" /> : `$${dailyData?.total_cost.toFixed(2) || '0.00'}`}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-        <Card className="border-border/50 rounded-2xl" data-testid="stat-meals">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                <UtensilsCrossed className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground font-inter">Meals Logged</p>
-                <p className="font-mono text-2xl font-bold">
-                  {loading ? <Skeleton className="h-8 w-20" /> : dailyData?.meal_count || 0}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* View Toggle & Add Button */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
+          <Button
+            variant={viewMode === 'chronological' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('chronological')}
+            data-testid="view-chronological"
+          >
+            Chronological
+          </Button>
+          <Button
+            variant={viewMode === 'by-meal' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('by-meal')}
+            data-testid="view-by-meal"
+          >
+            By Meal
+          </Button>
+        </div>
+        <Button onClick={() => setShowAddModal(true)} data-testid="add-food-btn">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Food
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Add Meal Form */}
-        <Card className="border-border/50 rounded-2xl lg:col-span-1" data-testid="add-meal-card">
-          <CardHeader>
-            <CardTitle className="font-outfit flex items-center gap-2">
-              <Scale className="w-5 h-5" />
-              Log by Weight
-            </CardTitle>
-            <CardDescription>Track by grams for accurate cost per serving</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Source Selection */}
-            <div className="flex gap-2">
-              <Button
-                variant={addSource === 'database' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { setAddSource('database'); setSelectedReceipt(null); setReceiptItems([]); }}
-                className="flex-1"
-                data-testid="source-database"
-              >
-                <Search className="w-4 h-4 mr-2" />
-                Database
-              </Button>
-              <Button
-                variant={addSource === 'receipt' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setAddSource('receipt')}
-                className="flex-1"
-                data-testid="source-receipt"
-              >
-                <Receipt className="w-4 h-4 mr-2" />
-                Receipt
-              </Button>
+      {/* Meal List */}
+      <Card className="border-border/50 rounded-2xl" data-testid="meal-list-card">
+        <CardContent className="p-6">
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
             </div>
-
-            {addSource === 'database' ? (
-              // Database search
-              <div className="space-y-4">
-                <FoodAutocomplete
-                  value={formData.item_name}
-                  onChange={(val) => setFormData({ ...formData, item_name: val })}
-                  onSelect={handleFoodSelect}
-                  placeholder="Search food..."
+          ) : !dailyData?.entries?.length ? (
+            <EmptyState onAdd={() => setShowAddModal(true)} />
+          ) : viewMode === 'by-meal' ? (
+            <div>
+              {renderMealEntries(dailyData.entries_by_meal?.breakfast, 'Breakfast', '🌅')}
+              {renderMealEntries(dailyData.entries_by_meal?.lunch, 'Lunch', '☀️')}
+              {renderMealEntries(dailyData.entries_by_meal?.dinner, 'Dinner', '🌙')}
+              {renderMealEntries(dailyData.entries_by_meal?.snack, 'Snacks', '🍿')}
+              {renderMealEntries(dailyData.entries_by_meal?.other, 'Other', '🍽️')}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {dailyData.entries.map((entry) => (
+                <MealEntryCard 
+                  key={entry.id} 
+                  entry={entry} 
+                  onDelete={() => handleDeleteEntry(entry.id)}
+                  showMealType
                 />
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Cal per 100g</label>
-                    <Input
-                      type="number"
-                      value={formData.calories_per_100g || ''}
-                      onChange={(e) => setFormData({ ...formData, calories_per_100g: parseInt(e.target.value) || 0 })}
-                      className="font-mono"
-                      data-testid="input-cal-per-100g"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Total Price ($)</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.total_price || ''}
-                      onChange={(e) => setFormData({ ...formData, total_price: parseFloat(e.target.value) || 0 })}
-                      className="font-mono"
-                      data-testid="input-price"
-                    />
-                  </div>
-                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Total Weight (g)</label>
-                    <Input
-                      type="number"
-                      value={formData.total_grams || ''}
-                      onChange={(e) => setFormData({ ...formData, total_grams: parseFloat(e.target.value) || 100 })}
-                      className="font-mono"
-                      data-testid="input-total-grams"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block font-semibold text-foreground">Grams Eaten</label>
-                    <Input
-                      type="number"
-                      value={formData.grams_consumed || ''}
-                      onChange={(e) => setFormData({ ...formData, grams_consumed: parseFloat(e.target.value) || 0 })}
-                      className="font-mono border-primary"
-                      data-testid="input-grams-consumed"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              // Receipt selection
-              <div className="space-y-4">
-                <Select value={selectedReceipt || ''} onValueChange={handleReceiptSelect}>
-                  <SelectTrigger data-testid="receipt-select">
-                    <SelectValue placeholder="Select a receipt..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {receipts.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {format(new Date(r.created_at), 'MMM d')} - {r.item_count} items (${r.total_cost})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      {/* Add Food Modal */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-outfit text-xl">Add Food</DialogTitle>
+            <DialogDescription>Search USDA database for accurate nutrition data</DialogDescription>
+          </DialogHeader>
 
-                {receiptItems.length > 0 && (
-                  <div className="space-y-2 max-h-40 overflow-auto">
-                    {receiptItems.map((item, i) => (
-                      <button
-                        key={i}
-                        className={`w-full p-3 rounded-lg text-left transition-colors ${
-                          formData.item_name === item.name ? 'bg-primary/10 border border-primary/30' : 'bg-muted/50 hover:bg-muted'
-                        }`}
-                        onClick={() => handleReceiptItemSelect(item)}
-                        data-testid={`receipt-item-${i}`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-sm">{item.name}</span>
-                          <span className="text-xs text-muted-foreground">${item.total_price}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{item.total_grams}g total • {item.calories_per_100g} cal/100g</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {formData.item_name && addSource === 'receipt' && (
-                  <div>
-                    <label className="text-xs font-semibold text-foreground mb-1 block">Grams Eaten</label>
-                    <Input
-                      type="number"
-                      value={formData.grams_consumed || ''}
-                      onChange={(e) => setFormData({ ...formData, grams_consumed: parseFloat(e.target.value) || 0 })}
-                      className="font-mono border-primary"
-                      placeholder="How many grams did you eat?"
-                      data-testid="receipt-grams-consumed"
-                    />
-                  </div>
-                )}
-              </div>
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Search foods... (e.g., chicken breast, banana)"
+              className="pl-10"
+              data-testid="food-search-input"
+            />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" />
             )}
+          </div>
 
-            {/* Calculated Preview */}
-            {formData.item_name && (
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">{formData.item_name}</p>
-                  <span className="text-xs text-muted-foreground">{formData.grams_consumed}g serving</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Calories:</span>
-                  <span className="font-mono font-bold text-primary">{calculatedCalories} cal</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="font-mono font-bold text-accent">${calculatedCost}</span>
-                </div>
-                <div className="mt-2 pt-2 border-t border-border/50">
-                  <p className="text-xs text-muted-foreground">
-                    {formData.grams_consumed}g of {formData.total_grams}g total @ ${formData.total_price}
+          {/* Search Results */}
+          {searchResults.length > 0 && !selectedFood && (
+            <div className="border rounded-xl max-h-60 overflow-auto">
+              {searchResults.map((food, i) => (
+                <button
+                  key={food.fdc_id}
+                  className="w-full p-4 text-left hover:bg-muted/50 transition-colors border-b last:border-0"
+                  onClick={() => handleSelectFood(food)}
+                  data-testid={`search-result-${i}`}
+                >
+                  <p className="font-medium">{food.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Per 100g: {food.nutrients_per_100g.calories} cal | 
+                    P: {food.nutrients_per_100g.protein}g | 
+                    C: {food.nutrients_per_100g.carbs}g | 
+                    F: {food.nutrients_per_100g.fat}g
                   </p>
-                </div>
-              </div>
-            )}
+                </button>
+              ))}
+            </div>
+          )}
 
-            <Button
-              className="w-full"
-              onClick={handleLogMeal}
-              disabled={!formData.item_name || formData.grams_consumed <= 0 || submitting}
-              data-testid="log-meal-btn"
-            >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4 mr-2" />
-              )}
-              Log Meal
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Today's Log */}
-        <Card className="border-border/50 rounded-2xl lg:col-span-2" data-testid="daily-log-card">
-          <CardHeader>
-            <CardTitle className="font-outfit flex items-center gap-2">
-              <UtensilsCrossed className="w-5 h-5" />
-              {format(selectedDate, 'EEEE, MMMM d')}
-            </CardTitle>
-            <CardDescription>
-              {dailyData?.meal_count || 0} meals logged
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 rounded-xl" />)}
-              </div>
-            ) : dailyData?.entries.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-                  <UtensilsCrossed className="w-8 h-8 text-muted-foreground" />
+          {/* Selected Food Details */}
+          {selectedFood && (
+            <div className="space-y-4">
+              {loadingDetails ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
                 </div>
-                <h3 className="font-outfit font-semibold text-lg mb-2">No meals logged</h3>
-                <p className="text-muted-foreground text-sm">
-                  Start tracking your meals using the form on the left
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {dailyData?.entries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted/70 transition-colors group"
-                    data-testid={`meal-entry-${entry.id}`}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{entry.item_name}</p>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                          {entry.source}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.grams_consumed}g serving • {format(new Date(entry.timestamp), 'h:mm a')}
+              ) : foodDetails && (
+                <>
+                  {/* Food Name & Clear */}
+                  <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl">
+                    <div>
+                      <p className="font-outfit font-semibold">{foodDetails.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Per 100g: {foodDetails.nutrients_per_100g.calories} cal
                       </p>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="font-mono text-sm font-bold text-primary">{entry.calories_consumed} cal</p>
-                        <p className="font-mono text-sm text-accent">${entry.cost.toFixed(2)}</p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteEntry(entry.id)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                        data-testid={`delete-entry-${entry.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                    <Button variant="ghost" size="icon" onClick={() => {
+                      setSelectedFood(null);
+                      setFoodDetails(null);
+                      setSearchQuery('');
+                    }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Serving Size Selection */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Select Serving Size</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {foodDetails.serving_sizes?.map((serving, i) => (
+                        <button
+                          key={i}
+                          className={`p-3 rounded-lg border text-left transition-colors ${
+                            selectedServing?.description === serving.description && !customGrams
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                          onClick={() => {
+                            setSelectedServing(serving);
+                            setCustomGrams('');
+                          }}
+                          data-testid={`serving-${i}`}
+                        >
+                          <p className="font-medium text-sm">{serving.description}</p>
+                          <p className="text-xs text-muted-foreground">{serving.grams}g</p>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Custom grams */}
+                    <div className="mt-3">
+                      <label className="text-sm text-muted-foreground mb-1 block">Or enter custom amount (grams)</label>
+                      <Input
+                        type="number"
+                        value={customGrams}
+                        onChange={(e) => {
+                          setCustomGrams(e.target.value);
+                          setSelectedServing(null);
+                        }}
+                        placeholder="e.g., 150"
+                        className="font-mono"
+                        data-testid="custom-grams"
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+                  {/* Meal Type */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Meal Type (optional)</label>
+                    <Select value={mealType} onValueChange={setMealType}>
+                      <SelectTrigger data-testid="meal-type-select">
+                        <SelectValue placeholder="Select meal type..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEAL_TYPES.map(type => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.icon} {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Cost Tracking */}
+                  <div className="p-4 bg-muted/30 rounded-xl">
+                    <p className="text-sm font-medium mb-3">Cost Tracking (optional)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Total Price Paid ($)</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={totalPrice}
+                          onChange={(e) => setTotalPrice(e.target.value)}
+                          placeholder="e.g., 5.99"
+                          className="font-mono"
+                          data-testid="total-price"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Total Weight Purchased (g)</label>
+                        <Input
+                          type="number"
+                          value={totalGramsPurchased}
+                          onChange={(e) => setTotalGramsPurchased(e.target.value)}
+                          placeholder="e.g., 500"
+                          className="font-mono"
+                          data-testid="total-grams"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Calculated Nutrition */}
+                  {nutrients && (
+                    <div className="p-4 border border-primary/30 bg-primary/5 rounded-xl">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="font-outfit font-semibold">This Serving</p>
+                        <p className="text-sm text-muted-foreground">
+                          {customGrams || selectedServing?.description || '100g'} ({getServingGrams()}g)
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-xl font-bold text-primary">{nutrients.calories}</p>
+                          <p className="text-xs text-muted-foreground">Calories</p>
+                        </div>
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-lg font-semibold text-red-500">{nutrients.protein}g</p>
+                          <p className="text-xs text-muted-foreground">Protein</p>
+                        </div>
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-lg font-semibold text-amber-500">{nutrients.carbs}g</p>
+                          <p className="text-xs text-muted-foreground">Carbs</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-center mt-2">
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-lg font-semibold text-blue-500">{nutrients.fat}g</p>
+                          <p className="text-xs text-muted-foreground">Fat</p>
+                        </div>
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-lg font-semibold text-green-500">{nutrients.fiber}g</p>
+                          <p className="text-xs text-muted-foreground">Fiber</p>
+                        </div>
+                        <div className="p-2 bg-background rounded-lg">
+                          <p className="font-mono text-lg font-semibold text-pink-500">{nutrients.sugar}g</p>
+                          <p className="text-xs text-muted-foreground">Sugar</p>
+                        </div>
+                      </div>
+                      {cost && (
+                        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+                          <p className="text-sm text-muted-foreground">Serving Cost</p>
+                          <p className="font-mono font-bold text-accent">${cost}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Add Button */}
+                  <Button
+                    className="w-full h-12"
+                    onClick={handleLogMeal}
+                    disabled={submitting || !getServingGrams()}
+                    data-testid="log-meal-btn"
+                  >
+                    {submitting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    Add to Log
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Macro Card Component
+function MacroCard({ icon, label, value, unit, color, bgColor }) {
+  return (
+    <div className={`p-3 rounded-xl ${bgColor}`}>
+      <div className={`flex items-center gap-2 ${color} mb-1`}>
+        {icon}
+        <span className="text-xs font-medium">{label}</span>
       </div>
+      <p className="font-mono text-lg font-bold">
+        {typeof value === 'number' ? value.toFixed(1) : value}{unit}
+      </p>
+    </div>
+  );
+}
+
+// Meal Entry Card Component
+function MealEntryCard({ entry, onDelete, showMealType = false }) {
+  return (
+    <div
+      className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted/70 transition-colors group"
+      data-testid={`meal-entry-${entry.id}`}
+    >
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <p className="font-medium">{entry.item_name}</p>
+          {showMealType && entry.meal_type && (
+            <Badge variant="outline" className="text-xs capitalize">
+              {entry.meal_type}
+            </Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          {entry.serving_description} • {format(new Date(entry.timestamp), 'h:mm a')}
+        </p>
+        <div className="flex items-center gap-3 mt-2 text-xs">
+          <span className="text-red-500">P: {entry.protein}g</span>
+          <span className="text-amber-500">C: {entry.carbs}g</span>
+          <span className="text-blue-500">F: {entry.fat}g</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="text-right">
+          <p className="font-mono text-lg font-bold text-primary">{entry.calories} cal</p>
+          {entry.cost > 0 && (
+            <p className="font-mono text-sm text-accent">${entry.cost.toFixed(2)}</p>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+          data-testid={`delete-entry-${entry.id}`}
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Empty State Component
+function EmptyState({ onAdd }) {
+  return (
+    <div className="text-center py-12">
+      <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+        <UtensilsCrossed className="w-8 h-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-outfit font-semibold text-lg mb-2">No meals logged</h3>
+      <p className="text-muted-foreground text-sm mb-6">
+        Start tracking your nutrition with USDA-verified data
+      </p>
+      <Button onClick={onAdd}>
+        <Plus className="w-4 h-4 mr-2" />
+        Add Food
+      </Button>
     </div>
   );
 }

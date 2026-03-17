@@ -104,32 +104,74 @@ class AnalysisHistory(BaseModel):
 
 # ==================== MEAL TRACKING MODELS ====================
 
+class ServingSize(BaseModel):
+    description: str  # e.g., "1 large", "1 cup", "1 slice"
+    grams: float
+
+class FoodNutrients(BaseModel):
+    calories: float
+    protein: float
+    carbs: float
+    fat: float
+    fiber: float
+    sugar: float
+
+class USDAFoodItem(BaseModel):
+    fdc_id: int
+    name: str
+    nutrients_per_100g: FoodNutrients
+    serving_sizes: List[ServingSize]
+
 class MealEntryCreate(BaseModel):
     item_name: str
-    calories_per_100g: int  # Calories per 100 grams
-    total_grams: float  # Total weight of the item purchased
-    grams_consumed: float  # How many grams eaten
-    total_price: float  # Price of the entire item
-    source: str  # 'receipt' or 'database'
-    source_id: Optional[str] = None  # analysis_id if from receipt
+    fdc_id: Optional[int] = None
+    # Nutrients per 100g
+    calories_per_100g: float
+    protein_per_100g: float
+    carbs_per_100g: float
+    fat_per_100g: float
+    fiber_per_100g: float = 0
+    sugar_per_100g: float = 0
+    # Serving info
+    serving_description: str  # e.g., "2 large eggs"
+    serving_grams: float
+    # Cost calculation
+    total_grams_purchased: float
+    total_price: float
+    # Meal type
+    meal_type: Optional[str] = None  # breakfast, lunch, dinner, snack, or None
+    source: str = "usda"  # usda, receipt, manual
 
 class MealEntry(BaseModel):
     id: str
     item_name: str
-    calories_consumed: int
+    # Consumed nutrients
+    calories: int
+    protein: float
+    carbs: float
+    fat: float
+    fiber: float
+    sugar: float
+    # Serving info
+    serving_description: str
+    serving_grams: float
     cost: float
-    grams_consumed: float
-    total_grams: float
-    calories_per_100g: int
+    meal_type: Optional[str]
     source: str
     timestamp: str
 
 class DailySummary(BaseModel):
     date: str
     total_calories: int
+    total_protein: float
+    total_carbs: float
+    total_fat: float
+    total_fiber: float
+    total_sugar: float
     total_cost: float
     meal_count: int
     entries: List[MealEntry]
+    entries_by_meal: Optional[dict] = None
 
 class CalendarDay(BaseModel):
     date: str
@@ -639,14 +681,20 @@ async def delete_analysis(analysis_id: str, current_user: dict = Depends(get_cur
 
 @api_router.post("/meals/log", response_model=MealEntry)
 async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_current_user)):
-    """Log a meal entry with gram-based proportional cost calculation"""
+    """Log a meal entry with full macros and proportional cost calculation"""
     
-    # Calculate proportional values based on grams
-    # Calories = (grams consumed / 100) × calories per 100g
-    calories_consumed = int((data.grams_consumed / 100) * data.calories_per_100g)
+    # Calculate proportional values based on serving grams
+    multiplier = data.serving_grams / 100
     
-    # Cost = (grams consumed / total grams) × total price
-    proportion = data.grams_consumed / data.total_grams if data.total_grams > 0 else 0
+    calories = int(data.calories_per_100g * multiplier)
+    protein = round(data.protein_per_100g * multiplier, 1)
+    carbs = round(data.carbs_per_100g * multiplier, 1)
+    fat = round(data.fat_per_100g * multiplier, 1)
+    fiber = round(data.fiber_per_100g * multiplier, 1)
+    sugar = round(data.sugar_per_100g * multiplier, 1)
+    
+    # Cost = (serving grams / total grams purchased) × total price
+    proportion = data.serving_grams / data.total_grams_purchased if data.total_grams_purchased > 0 else 0
     cost = round(data.total_price * proportion, 2)
     
     entry_id = str(uuid.uuid4())
@@ -654,14 +702,30 @@ async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_curre
         "id": entry_id,
         "user_id": current_user["id"],
         "item_name": data.item_name,
-        "calories_consumed": calories_consumed,
+        "fdc_id": data.fdc_id,
+        # Consumed values
+        "calories": calories,
+        "protein": protein,
+        "carbs": carbs,
+        "fat": fat,
+        "fiber": fiber,
+        "sugar": sugar,
         "cost": cost,
-        "grams_consumed": data.grams_consumed,
-        "total_grams": data.total_grams,
+        # Per 100g values (for reference)
         "calories_per_100g": data.calories_per_100g,
+        "protein_per_100g": data.protein_per_100g,
+        "carbs_per_100g": data.carbs_per_100g,
+        "fat_per_100g": data.fat_per_100g,
+        "fiber_per_100g": data.fiber_per_100g,
+        "sugar_per_100g": data.sugar_per_100g,
+        # Serving info
+        "serving_description": data.serving_description,
+        "serving_grams": data.serving_grams,
+        "total_grams_purchased": data.total_grams_purchased,
         "total_price": data.total_price,
+        # Metadata
+        "meal_type": data.meal_type,
         "source": data.source,
-        "source_id": data.source_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")
     }
@@ -671,11 +735,16 @@ async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_curre
     return MealEntry(
         id=entry_id,
         item_name=data.item_name,
-        calories_consumed=calories_consumed,
+        calories=calories,
+        protein=protein,
+        carbs=carbs,
+        fat=fat,
+        fiber=fiber,
+        sugar=sugar,
+        serving_description=data.serving_description,
+        serving_grams=data.serving_grams,
         cost=cost,
-        grams_consumed=data.grams_consumed,
-        total_grams=data.total_grams,
-        calories_per_100g=data.calories_per_100g,
+        meal_type=data.meal_type,
         source=data.source,
         timestamp=entry["timestamp"]
     )
@@ -692,36 +761,61 @@ async def get_meals_for_date(date: str, current_user: dict = Depends(get_current
     return await get_meals_by_date(date, current_user)
 
 async def get_meals_by_date(date: str, current_user: dict) -> DailySummary:
-    """Helper function to get meals for a date"""
+    """Helper function to get meals for a date with full macro breakdown"""
     entries = await db.meal_logs.find(
         {"user_id": current_user["id"], "date": date},
         {"_id": 0}
     ).sort("timestamp", 1).to_list(100)
     
-    total_calories = sum(e.get("calories_consumed", 0) for e in entries)
+    # Calculate totals
+    total_calories = sum(e.get("calories", e.get("calories_consumed", 0)) for e in entries)
+    total_protein = sum(e.get("protein", 0) for e in entries)
+    total_carbs = sum(e.get("carbs", 0) for e in entries)
+    total_fat = sum(e.get("fat", 0) for e in entries)
+    total_fiber = sum(e.get("fiber", 0) for e in entries)
+    total_sugar = sum(e.get("sugar", 0) for e in entries)
     total_cost = sum(e.get("cost", 0) for e in entries)
     
-    meal_entries = [
-        MealEntry(
+    meal_entries = []
+    for e in entries:
+        meal_entries.append(MealEntry(
             id=e["id"],
             item_name=e["item_name"],
-            calories_consumed=e["calories_consumed"],
-            cost=e["cost"],
-            grams_consumed=e.get("grams_consumed", e.get("units_consumed", 0) * 100),  # Backwards compat
-            total_grams=e.get("total_grams", e.get("total_units", 1) * 100),  # Backwards compat
-            calories_per_100g=e.get("calories_per_100g", e.get("calories_per_unit", 0)),  # Backwards compat
-            source=e["source"],
+            calories=e.get("calories", e.get("calories_consumed", 0)),
+            protein=e.get("protein", 0),
+            carbs=e.get("carbs", 0),
+            fat=e.get("fat", 0),
+            fiber=e.get("fiber", 0),
+            sugar=e.get("sugar", 0),
+            serving_description=e.get("serving_description", f"{e.get('grams_consumed', 100)}g"),
+            serving_grams=e.get("serving_grams", e.get("grams_consumed", 100)),
+            cost=e.get("cost", 0),
+            meal_type=e.get("meal_type"),
+            source=e.get("source", "manual"),
             timestamp=e["timestamp"]
-        )
-        for e in entries
-    ]
+        ))
+    
+    # Group entries by meal type for dual view
+    entries_by_meal = {"breakfast": [], "lunch": [], "dinner": [], "snack": [], "other": []}
+    for entry in meal_entries:
+        meal_type = entry.meal_type or "other"
+        if meal_type in entries_by_meal:
+            entries_by_meal[meal_type].append(entry.model_dump())
+        else:
+            entries_by_meal["other"].append(entry.model_dump())
     
     return DailySummary(
         date=date,
         total_calories=total_calories,
+        total_protein=round(total_protein, 1),
+        total_carbs=round(total_carbs, 1),
+        total_fat=round(total_fat, 1),
+        total_fiber=round(total_fiber, 1),
+        total_sugar=round(total_sugar, 1),
         total_cost=round(total_cost, 2),
         meal_count=len(entries),
-        entries=meal_entries
+        entries=meal_entries,
+        entries_by_meal=entries_by_meal
     )
 
 @api_router.get("/meals/calendar")
@@ -866,90 +960,147 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-@api_router.get("/food-database")
-async def get_food_database(q: str = ""):
-    """Search the calorie database for food items - returns calories per 100g"""
-    results = []
-    search_term = q.lower().strip()
+# ==================== USDA FOOD DATABASE ====================
+
+import httpx
+
+USDA_API_KEY = os.environ.get('USDA_API_KEY', '')
+USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1"
+
+@api_router.get("/food-search")
+async def search_usda_foods(q: str, limit: int = 15):
+    """Search USDA FoodData Central for foods with full nutrition and serving sizes"""
+    if not q or len(q) < 2:
+        return {"items": []}
     
-    # Standard calorie densities per 100g for common foods
-    CALORIE_PER_100G = {
-        "eggs": 155,
-        "milk": 42,
-        "cheese": 402,
-        "butter": 717,
-        "yogurt": 59,
-        "cream cheese": 342,
-        "bread": 265,
-        "rice": 130,
-        "pasta": 131,
-        "oatmeal": 68,
-        "cereal": 379,
-        "tortilla": 218,
-        "bagel": 257,
-        "chicken": 165,
-        "beef": 250,
-        "pork": 242,
-        "ground beef": 254,
-        "bacon": 541,
-        "sausage": 301,
-        "turkey": 135,
-        "ham": 145,
-        "fish": 206,
-        "salmon": 208,
-        "tuna": 132,
-        "apple": 52,
-        "banana": 89,
-        "orange": 47,
-        "grapes": 69,
-        "strawberries": 32,
-        "blueberries": 57,
-        "potato": 77,
-        "tomato": 18,
-        "lettuce": 15,
-        "carrot": 41,
-        "broccoli": 34,
-        "onion": 40,
-        "spinach": 23,
-        "beans": 127,
-        "soup": 30,
-        "peanut butter": 588,
-        "juice": 45,
-        "soda": 41,
-        "coffee": 1,
-        "chips": 536,
-        "cookies": 488,
-        "crackers": 421,
-        "nuts": 607,
-        "almonds": 579,
-    }
+    if not USDA_API_KEY:
+        raise HTTPException(status_code=500, detail="USDA API key not configured")
     
-    for name, cal_per_100g in CALORIE_PER_100G.items():
-        if not search_term or search_term in name:
-            # Estimate typical package size in grams
-            typical_grams = CALORIE_DATABASE.get(name, {}).get("typical_quantity", 1) * 100
-            if name in ["eggs"]:
-                typical_grams = 720  # 12 eggs × 60g each
-            elif name in ["milk"]:
-                typical_grams = 3785  # 1 gallon
-            elif name in ["bread"]:
-                typical_grams = 500  # typical loaf
-            elif name in ["rice", "pasta"]:
-                typical_grams = 907  # 2 lb bag
-            elif name in ["chicken", "beef", "pork", "ground beef"]:
-                typical_grams = 454  # 1 lb
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Search for foods - prefer SR Legacy and Foundation for better portion data
+            response = await client.post(
+                f"{USDA_BASE_URL}/foods/search",
+                params={"api_key": USDA_API_KEY},
+                json={
+                    "query": q,
+                    "pageSize": limit,
+                    "dataType": ["SR Legacy", "Foundation", "Survey (FNDDS)"]
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
             
-            results.append({
-                "name": name.title(),
-                "calories_per_100g": cal_per_100g,
-                "typical_grams": typical_grams,
-                "typical_serving_grams": 100,  # Default serving size
-            })
+            results = []
+            for food in data.get("foods", []):
+                # Extract nutrients
+                nutrients = {}
+                for n in food.get("foodNutrients", []):
+                    name = n.get("nutrientName", "")
+                    value = n.get("value", 0)
+                    if "Energy" in name and "KCAL" in n.get("unitName", "").upper():
+                        nutrients["calories"] = value
+                    elif name == "Protein":
+                        nutrients["protein"] = value
+                    elif "Carbohydrate" in name:
+                        nutrients["carbs"] = value
+                    elif "Total lipid" in name or name == "Fat":
+                        nutrients["fat"] = value
+                    elif "Fiber" in name:
+                        nutrients["fiber"] = value
+                    elif "Sugar" in name and "Total" in name:
+                        nutrients["sugar"] = value
+                
+                # Only include if we have basic nutrients
+                if nutrients.get("calories"):
+                    results.append({
+                        "fdc_id": food.get("fdcId"),
+                        "name": food.get("description", "").title(),
+                        "data_type": food.get("dataType"),
+                        "nutrients_per_100g": {
+                            "calories": nutrients.get("calories", 0),
+                            "protein": round(nutrients.get("protein", 0), 1),
+                            "carbs": round(nutrients.get("carbs", 0), 1),
+                            "fat": round(nutrients.get("fat", 0), 1),
+                            "fiber": round(nutrients.get("fiber", 0), 1),
+                            "sugar": round(nutrients.get("sugar", 0), 1)
+                        }
+                    })
+            
+            return {"items": results}
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="USDA API timeout")
+    except Exception as e:
+        logger.error(f"USDA search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"USDA search failed: {str(e)}")
+
+@api_router.get("/food/{fdc_id}")
+async def get_food_details(fdc_id: int):
+    """Get detailed food info including serving sizes from USDA"""
+    if not USDA_API_KEY:
+        raise HTTPException(status_code=500, detail="USDA API key not configured")
     
-    # Sort by relevance (exact match first, then alphabetical)
-    results.sort(key=lambda x: (0 if x["name"].lower() == search_term else 1, x["name"]))
-    
-    return {"items": results[:15]}  # Limit to 15 results
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{USDA_BASE_URL}/food/{fdc_id}",
+                params={"api_key": USDA_API_KEY}
+            )
+            response.raise_for_status()
+            food = response.json()
+            
+            # Extract nutrients per 100g
+            nutrients = {
+                "calories": 0, "protein": 0, "carbs": 0,
+                "fat": 0, "fiber": 0, "sugar": 0
+            }
+            
+            for n in food.get("foodNutrients", []):
+                nutrient = n.get("nutrient", {})
+                name = nutrient.get("name", "")
+                amount = n.get("amount", 0)
+                
+                if name == "Energy" and nutrient.get("unitName") == "kcal":
+                    nutrients["calories"] = amount
+                elif name == "Protein":
+                    nutrients["protein"] = round(amount, 1)
+                elif "Carbohydrate" in name:
+                    nutrients["carbs"] = round(amount, 1)
+                elif "Total lipid" in name:
+                    nutrients["fat"] = round(amount, 1)
+                elif "Fiber" in name:
+                    nutrients["fiber"] = round(amount, 1)
+                elif "Sugars, total" in name:
+                    nutrients["sugar"] = round(amount, 1)
+            
+            # Extract serving sizes
+            serving_sizes = []
+            for portion in food.get("foodPortions", []):
+                desc = portion.get("portionDescription") or portion.get("modifier") or "serving"
+                grams = portion.get("gramWeight", 100)
+                if grams and grams > 0:
+                    serving_sizes.append({
+                        "description": desc,
+                        "grams": round(grams, 1)
+                    })
+            
+            # Add custom gram option if no portions
+            if not serving_sizes:
+                serving_sizes.append({"description": "100g", "grams": 100})
+            
+            return {
+                "fdc_id": fdc_id,
+                "name": food.get("description", "").title(),
+                "nutrients_per_100g": nutrients,
+                "serving_sizes": serving_sizes
+            }
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="USDA API timeout")
+    except Exception as e:
+        logger.error(f"USDA food details error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get food details: {str(e)}")
 
 # Include router and middleware
 app.include_router(api_router)

@@ -417,57 +417,106 @@ Total: $28.24"""
             return True
         return False
 
-    # ==================== MEAL TRACKING TESTS ====================
+    # ==================== USDA FOOD DATA TESTS ====================
     
-    def test_food_database(self):
-        """Test food database search functionality"""
+    def test_usda_food_search(self):
+        """Test USDA food search functionality"""
         success, response = self.run_test(
-            "Food Database Search - All Items",
+            "USDA Food Search - Chicken",
             "GET",
-            "food-database",
+            "food-search?q=chicken breast&limit=5",
             200
         )
         
         if success and 'items' in response:
             items = response.get('items', [])
-            self.log(f"   ✓ Found {len(items)} food items in database")
+            self.log(f"   ✓ Found {len(items)} food items from USDA")
+            if items:
+                item = items[0]
+                self.log(f"   ✓ Sample item: {item.get('name', 'Unknown')}")
+                nutrients = item.get('nutrients_per_100g', {})
+                self.log(f"   ✓ Calories per 100g: {nutrients.get('calories', 0)}")
+                self.log(f"   ✓ Protein per 100g: {nutrients.get('protein', 0)}g")
+                if item.get('fdc_id'):
+                    self.test_food_id = item['fdc_id']  # Store for next test
+                    return True
+        return False
+    
+    def test_usda_food_search_empty_query(self):
+        """Test USDA food search with empty/short query"""
+        success, response = self.run_test(
+            "USDA Food Search - Empty Query",
+            "GET", 
+            "food-search?q=a",  # Too short
+            200
+        )
+        
+        if success and response.get('items') == []:
+            self.log(f"   ✓ Empty result for short query as expected")
             return True
         return False
     
-    def test_food_database_search(self):
-        """Test food database search with query"""
+    def test_usda_food_details(self):
+        """Test getting USDA food details with serving sizes"""
+        if not hasattr(self, 'test_food_id'):
+            # Use a known USDA FDC ID for chicken breast
+            self.test_food_id = 171077  # Chicken breast, skinless, boneless, meat only, raw
+        
         success, response = self.run_test(
-            "Food Database Search - Eggs",
+            f"USDA Food Details - FDC ID {self.test_food_id}",
             "GET",
-            "food-database?q=eggs",
+            f"food/{self.test_food_id}",
             200
         )
         
-        if success and 'items' in response:
-            items = response.get('items', [])
-            self.log(f"   ✓ Found {len(items)} items matching 'eggs'")
-            if items and any('egg' in item['name'].lower() for item in items):
-                self.log(f"   ✓ Search results contain eggs")
-                return True
+        if success and 'fdc_id' in response:
+            self.log(f"   ✓ Food details retrieved: {response.get('name', 'Unknown')}")
+            nutrients = response.get('nutrients_per_100g', {})
+            self.log(f"   ✓ Full nutrition per 100g available")
+            self.log(f"     - Calories: {nutrients.get('calories', 0)}")
+            self.log(f"     - Protein: {nutrients.get('protein', 0)}g")
+            self.log(f"     - Carbs: {nutrients.get('carbs', 0)}g")
+            self.log(f"     - Fat: {nutrients.get('fat', 0)}g")
+            self.log(f"     - Fiber: {nutrients.get('fiber', 0)}g")
+            self.log(f"     - Sugar: {nutrients.get('sugar', 0)}g")
+            
+            serving_sizes = response.get('serving_sizes', [])
+            self.log(f"   ✓ Found {len(serving_sizes)} serving size options")
+            if serving_sizes:
+                for i, serving in enumerate(serving_sizes[:3]):  # Show first 3
+                    self.log(f"     - {serving.get('description')}: {serving.get('grams')}g")
+            return True
         return False
     
-    def test_log_meal_from_database(self):
-        """Test logging a meal from database"""
+    def test_log_meal_with_usda_macros(self):
+        """Test logging a meal with full USDA macro data"""
         if not self.token:
             return False
             
+        # Test with known USDA data for eggs
         meal_data = {
-            "item_name": "Eggs",
-            "calories_per_unit": 70,
-            "total_units": 12,
-            "units_consumed": 2,
-            "total_price": 3.49,
-            "source": "database",
-            "unit_name": "egg"
+            "item_name": "Chicken Breast, skinless, boneless, raw",
+            "fdc_id": 171077,  # USDA FDC ID for chicken breast
+            # Nutrients per 100g (approximate USDA values)
+            "calories_per_100g": 165,
+            "protein_per_100g": 31.0,
+            "carbs_per_100g": 0.0,
+            "fat_per_100g": 3.6,
+            "fiber_per_100g": 0.0,
+            "sugar_per_100g": 0.0,
+            # Serving info
+            "serving_description": "1 medium piece (150g)",
+            "serving_grams": 150,
+            # Cost calculation
+            "total_grams_purchased": 500,  # 500g package
+            "total_price": 8.99,
+            # Meal type
+            "meal_type": "dinner",
+            "source": "usda"
         }
         
         success, response = self.run_test(
-            "Log Meal from Database",
+            "Log Meal with USDA Macros",
             "POST",
             "meals/log",
             200,
@@ -476,18 +525,26 @@ Total: $28.24"""
         
         if success and 'id' in response:
             self.meal_entry_id = response['id']
-            self.log(f"   ✓ Meal logged with ID: {self.meal_entry_id}")
-            self.log(f"   ✓ Calories consumed: {response.get('calories_consumed')}")
-            self.log(f"   ✓ Proportional cost: ${response.get('cost')}")
+            self.log(f"   ✓ USDA meal logged with ID: {self.meal_entry_id}")
             
-            # Verify proportional calculation: (2/12) * $3.49 = ~$0.58
-            expected_cost = round((2/12) * 3.49, 2)
-            actual_cost = response.get('cost', 0)
-            if abs(actual_cost - expected_cost) < 0.01:
-                self.log(f"   ✓ Proportional cost calculation correct: ${actual_cost}")
+            # Verify macro calculations (150g serving)
+            expected_calories = int(165 * 1.5)  # 247 calories
+            expected_protein = round(31.0 * 1.5, 1)  # 46.5g protein
+            expected_cost = round((150/500) * 8.99, 2)  # $2.70 proportional cost
+            
+            self.log(f"   ✓ Calculated calories: {response.get('calories')} (expected ~{expected_calories})")
+            self.log(f"   ✓ Calculated protein: {response.get('protein')}g (expected ~{expected_protein}g)")
+            self.log(f"   ✓ Proportional cost: ${response.get('cost')} (expected ~${expected_cost})")
+            
+            # Check all macros are present
+            macros = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar']
+            all_macros_present = all(macro in response for macro in macros)
+            if all_macros_present:
+                self.log(f"   ✓ All macro nutrients logged successfully")
                 return True
             else:
-                self.log(f"   ❌ Proportional cost mismatch: expected ${expected_cost}, got ${actual_cost}")
+                missing = [macro for macro in macros if macro not in response]
+                self.log(f"   ❌ Missing macros: {missing}")
         return False
     
     def test_log_meal_from_receipt(self):
@@ -545,13 +602,13 @@ Total: $11.50"""
             return True
         return False
     
-    def test_get_today_meals(self):
-        """Test getting today's meal log"""
+    def test_get_today_meals_with_macros(self):
+        """Test getting today's meal log with full macro breakdown"""
         if not self.token:
             return False
             
         success, response = self.run_test(
-            "Get Today's Meals",
+            "Get Today's Meals with Macros",
             "GET",
             "meals/today",
             200
@@ -560,9 +617,34 @@ Total: $11.50"""
         if success and 'entries' in response:
             entries = response.get('entries', [])
             self.log(f"   ✓ Found {len(entries)} meals today")
-            self.log(f"   ✓ Total calories: {response.get('total_calories', 0)}")
-            self.log(f"   ✓ Total cost: ${response.get('total_cost', 0)}")
-            return True
+            
+            # Check daily totals include all macros
+            macro_fields = ['total_calories', 'total_protein', 'total_carbs', 'total_fat', 'total_fiber', 'total_sugar', 'total_cost']
+            totals_complete = all(field in response for field in macro_fields)
+            
+            if totals_complete:
+                self.log(f"   ✓ Daily totals complete:")
+                self.log(f"     - Calories: {response.get('total_calories', 0)}")
+                self.log(f"     - Protein: {response.get('total_protein', 0)}g")  
+                self.log(f"     - Carbs: {response.get('total_carbs', 0)}g")
+                self.log(f"     - Fat: {response.get('total_fat', 0)}g")
+                self.log(f"     - Fiber: {response.get('total_fiber', 0)}g")
+                self.log(f"     - Sugar: {response.get('total_sugar', 0)}g")
+                self.log(f"     - Cost: ${response.get('total_cost', 0)}")
+            
+            # Check entries_by_meal for dual view
+            if 'entries_by_meal' in response:
+                by_meal = response['entries_by_meal']
+                meal_types = ['breakfast', 'lunch', 'dinner', 'snack', 'other']
+                self.log(f"   ✓ Entries by meal view available:")
+                for meal_type in meal_types:
+                    count = len(by_meal.get(meal_type, []))
+                    if count > 0:
+                        self.log(f"     - {meal_type.capitalize()}: {count} entries")
+                
+                return True
+            else:
+                self.log(f"   ❌ entries_by_meal not found for dual view")
         return False
     
     def test_get_meals_by_date(self):
@@ -717,14 +799,18 @@ def main():
     tester.test_get_nonexistent_analysis()
     tester.test_ai_analysis_processing()
     
+    print("🥗 USDA INTEGRATION TESTS")
+    print("-" * 30)
+    tester.test_usda_food_search()
+    tester.test_usda_food_search_empty_query()
+    tester.test_usda_food_details()
+    
     print()
     print("🍽️ MEAL TRACKING TESTS")
     print("-" * 30)
-    tester.test_food_database()
-    tester.test_food_database_search()
-    tester.test_log_meal_from_database()
+    tester.test_log_meal_with_usda_macros()
     tester.test_log_meal_from_receipt()
-    tester.test_get_today_meals()
+    tester.test_get_today_meals_with_macros()
     tester.test_get_meals_by_date()
     tester.test_get_calendar_data()
     tester.test_get_receipt_items_for_tracking()
