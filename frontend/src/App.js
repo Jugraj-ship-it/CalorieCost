@@ -9,6 +9,8 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Analyze from './pages/Analyze';
 import AnalysisResult from './pages/AnalysisResult';
+import Track from './pages/Track';
+import CalendarView from './pages/CalendarView';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -90,6 +92,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <AnalysisResult />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/track" 
+          element={
+            <ProtectedRoute>
+              <Track />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/calendar" 
+          element={
+            <ProtectedRoute>
+              <CalendarView />
             </ProtectedRoute>
           } 
         />

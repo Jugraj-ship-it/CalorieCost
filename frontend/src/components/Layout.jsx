@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { Sun, Moon, User, LogOut, LayoutDashboard, PlusCircle, Receipt } from 'lucide-react';
+import { Sun, Moon, User, LogOut, LayoutDashboard, PlusCircle, Receipt, UtensilsCrossed, CalendarDays } from 'lucide-react';
 
 export const Layout = ({ children }) => {
   const { user, logout, isAuthenticated } = useAuth();
@@ -61,7 +61,17 @@ export const Layout = ({ children }) => {
                       className="font-outfit"
                     >
                       <PlusCircle className="w-4 h-4 mr-2" />
-                      New Analysis
+                      Analyze
+                    </Button>
+                  </Link>
+                  <Link to="/track" data-testid="nav-track">
+                    <Button 
+                      variant={isActive('/track') ? 'secondary' : 'ghost'} 
+                      size="sm"
+                      className="font-outfit"
+                    >
+                      <UtensilsCrossed className="w-4 h-4 mr-2" />
+                      Track
                     </Button>
                   </Link>
                 </>
@@ -100,6 +110,14 @@ export const Layout = ({ children }) => {
                     <DropdownMenuItem onClick={() => navigate('/dashboard')} data-testid="menu-dashboard">
                       <LayoutDashboard className="w-4 h-4 mr-2" />
                       Dashboard
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate('/track')} data-testid="menu-track">
+                      <UtensilsCrossed className="w-4 h-4 mr-2" />
+                      Daily Tracker
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate('/calendar')} data-testid="menu-calendar">
+                      <CalendarDays className="w-4 h-4 mr-2" />
+                      Calendar
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout} className="text-destructive" data-testid="menu-logout">

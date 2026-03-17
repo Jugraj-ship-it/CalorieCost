@@ -102,6 +102,42 @@ class AnalysisHistory(BaseModel):
     item_count: int
     created_at: str
 
+# ==================== MEAL TRACKING MODELS ====================
+
+class MealEntryCreate(BaseModel):
+    item_name: str
+    calories_per_unit: int
+    total_units: float
+    units_consumed: float
+    total_price: float
+    source: str  # 'receipt' or 'database'
+    source_id: Optional[str] = None  # analysis_id if from receipt
+    unit_name: Optional[str] = None
+
+class MealEntry(BaseModel):
+    id: str
+    item_name: str
+    calories_consumed: int
+    cost: float
+    units_consumed: float
+    total_units: float
+    unit_name: Optional[str] = None
+    source: str
+    timestamp: str
+
+class DailySummary(BaseModel):
+    date: str
+    total_calories: int
+    total_cost: float
+    meal_count: int
+    entries: List[MealEntry]
+
+class CalendarDay(BaseModel):
+    date: str
+    total_calories: int
+    total_cost: float
+    meal_count: int
+
 # ==================== CALORIE DATABASE ====================
 
 CALORIE_DATABASE = {
@@ -599,6 +635,208 @@ async def delete_analysis(analysis_id: str, current_user: dict = Depends(get_cur
         raise HTTPException(status_code=404, detail="Analysis not found")
     
     return {"message": "Analysis deleted successfully"}
+
+# ==================== MEAL TRACKING ROUTES ====================
+
+@api_router.post("/meals/log", response_model=MealEntry)
+async def log_meal(data: MealEntryCreate, current_user: dict = Depends(get_current_user)):
+    """Log a meal entry with proportional cost calculation"""
+    
+    # Calculate proportional values
+    proportion = data.units_consumed / data.total_units if data.total_units > 0 else 0
+    calories_consumed = int(data.calories_per_unit * data.units_consumed)
+    cost = round(data.total_price * proportion, 2)
+    
+    entry_id = str(uuid.uuid4())
+    entry = {
+        "id": entry_id,
+        "user_id": current_user["id"],
+        "item_name": data.item_name,
+        "calories_consumed": calories_consumed,
+        "cost": cost,
+        "units_consumed": data.units_consumed,
+        "total_units": data.total_units,
+        "unit_name": data.unit_name,
+        "calories_per_unit": data.calories_per_unit,
+        "total_price": data.total_price,
+        "source": data.source,
+        "source_id": data.source_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    }
+    
+    await db.meal_logs.insert_one(entry)
+    
+    return MealEntry(
+        id=entry_id,
+        item_name=data.item_name,
+        calories_consumed=calories_consumed,
+        cost=cost,
+        units_consumed=data.units_consumed,
+        total_units=data.total_units,
+        unit_name=data.unit_name,
+        source=data.source,
+        timestamp=entry["timestamp"]
+    )
+
+@api_router.get("/meals/today", response_model=DailySummary)
+async def get_today_meals(current_user: dict = Depends(get_current_user)):
+    """Get today's meal log"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return await get_meals_by_date(today, current_user)
+
+@api_router.get("/meals/date/{date}", response_model=DailySummary)
+async def get_meals_for_date(date: str, current_user: dict = Depends(get_current_user)):
+    """Get meals for a specific date (YYYY-MM-DD)"""
+    return await get_meals_by_date(date, current_user)
+
+async def get_meals_by_date(date: str, current_user: dict) -> DailySummary:
+    """Helper function to get meals for a date"""
+    entries = await db.meal_logs.find(
+        {"user_id": current_user["id"], "date": date},
+        {"_id": 0}
+    ).sort("timestamp", 1).to_list(100)
+    
+    total_calories = sum(e.get("calories_consumed", 0) for e in entries)
+    total_cost = sum(e.get("cost", 0) for e in entries)
+    
+    meal_entries = [
+        MealEntry(
+            id=e["id"],
+            item_name=e["item_name"],
+            calories_consumed=e["calories_consumed"],
+            cost=e["cost"],
+            units_consumed=e["units_consumed"],
+            total_units=e["total_units"],
+            unit_name=e.get("unit_name"),
+            source=e["source"],
+            timestamp=e["timestamp"]
+        )
+        for e in entries
+    ]
+    
+    return DailySummary(
+        date=date,
+        total_calories=total_calories,
+        total_cost=round(total_cost, 2),
+        meal_count=len(entries),
+        entries=meal_entries
+    )
+
+@api_router.get("/meals/calendar")
+async def get_calendar_data(
+    month: int,
+    year: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get monthly calendar data with daily summaries"""
+    # Build date range for the month
+    start_date = f"{year}-{month:02d}-01"
+    if month == 12:
+        end_date = f"{year + 1}-01-01"
+    else:
+        end_date = f"{year}-{month + 1:02d}-01"
+    
+    # Aggregate daily totals
+    pipeline = [
+        {
+            "$match": {
+                "user_id": current_user["id"],
+                "date": {"$gte": start_date, "$lt": end_date}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$date",
+                "total_calories": {"$sum": "$calories_consumed"},
+                "total_cost": {"$sum": "$cost"},
+                "meal_count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+    
+    results = await db.meal_logs.aggregate(pipeline).to_list(31)
+    
+    days = [
+        CalendarDay(
+            date=r["_id"],
+            total_calories=r["total_calories"],
+            total_cost=round(r["total_cost"], 2),
+            meal_count=r["meal_count"]
+        )
+        for r in results
+    ]
+    
+    # Calculate monthly totals
+    monthly_calories = sum(d.total_calories for d in days)
+    monthly_cost = sum(d.total_cost for d in days)
+    
+    return {
+        "month": month,
+        "year": year,
+        "days": days,
+        "monthly_totals": {
+            "total_calories": monthly_calories,
+            "total_cost": round(monthly_cost, 2),
+            "days_logged": len(days)
+        }
+    }
+
+@api_router.delete("/meals/{entry_id}")
+async def delete_meal_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a meal entry"""
+    result = await db.meal_logs.delete_one({"id": entry_id, "user_id": current_user["id"]})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Meal entry not found")
+    
+    return {"message": "Meal entry deleted successfully"}
+
+@api_router.get("/meals/receipt-items/{analysis_id}")
+async def get_receipt_items_for_tracking(analysis_id: str, current_user: dict = Depends(get_current_user)):
+    """Get items from a receipt analysis for meal tracking"""
+    analysis = await db.analyses.find_one(
+        {"id": analysis_id, "user_id": current_user["id"]},
+        {"_id": 0, "items": 1, "created_at": 1}
+    )
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    # Transform items for tracking (estimate units from quantity string)
+    tracking_items = []
+    for item in analysis.get("items", []):
+        # Try to parse quantity to get unit count
+        quantity_str = item.get("quantity", "")
+        total_units = 1.0
+        unit_name = "serving"
+        
+        # Simple parsing of common quantity formats
+        import re
+        qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(\w+)?', quantity_str)
+        if qty_match:
+            total_units = float(qty_match.group(1))
+            if qty_match.group(2):
+                unit_name = qty_match.group(2)
+        
+        calories_per_unit = item["calories"] / total_units if total_units > 0 else item["calories"]
+        
+        tracking_items.append({
+            "name": item["name"],
+            "total_calories": item["calories"],
+            "total_price": item["price"],
+            "total_units": total_units,
+            "unit_name": unit_name,
+            "calories_per_unit": round(calories_per_unit),
+            "quantity": quantity_str
+        })
+    
+    return {
+        "analysis_id": analysis_id,
+        "created_at": analysis["created_at"],
+        "items": tracking_items
+    }
 
 # ==================== ROOT ====================
 

@@ -417,6 +417,270 @@ Total: $28.24"""
             return True
         return False
 
+    # ==================== MEAL TRACKING TESTS ====================
+    
+    def test_food_database(self):
+        """Test food database search functionality"""
+        success, response = self.run_test(
+            "Food Database Search - All Items",
+            "GET",
+            "food-database",
+            200
+        )
+        
+        if success and 'items' in response:
+            items = response.get('items', [])
+            self.log(f"   ✓ Found {len(items)} food items in database")
+            return True
+        return False
+    
+    def test_food_database_search(self):
+        """Test food database search with query"""
+        success, response = self.run_test(
+            "Food Database Search - Eggs",
+            "GET",
+            "food-database?q=eggs",
+            200
+        )
+        
+        if success and 'items' in response:
+            items = response.get('items', [])
+            self.log(f"   ✓ Found {len(items)} items matching 'eggs'")
+            if items and any('egg' in item['name'].lower() for item in items):
+                self.log(f"   ✓ Search results contain eggs")
+                return True
+        return False
+    
+    def test_log_meal_from_database(self):
+        """Test logging a meal from database"""
+        if not self.token:
+            return False
+            
+        meal_data = {
+            "item_name": "Eggs",
+            "calories_per_unit": 70,
+            "total_units": 12,
+            "units_consumed": 2,
+            "total_price": 3.49,
+            "source": "database",
+            "unit_name": "egg"
+        }
+        
+        success, response = self.run_test(
+            "Log Meal from Database",
+            "POST",
+            "meals/log",
+            200,
+            data=meal_data
+        )
+        
+        if success and 'id' in response:
+            self.meal_entry_id = response['id']
+            self.log(f"   ✓ Meal logged with ID: {self.meal_entry_id}")
+            self.log(f"   ✓ Calories consumed: {response.get('calories_consumed')}")
+            self.log(f"   ✓ Proportional cost: ${response.get('cost')}")
+            
+            # Verify proportional calculation: (2/12) * $3.49 = ~$0.58
+            expected_cost = round((2/12) * 3.49, 2)
+            actual_cost = response.get('cost', 0)
+            if abs(actual_cost - expected_cost) < 0.01:
+                self.log(f"   ✓ Proportional cost calculation correct: ${actual_cost}")
+                return True
+            else:
+                self.log(f"   ❌ Proportional cost mismatch: expected ${expected_cost}, got ${actual_cost}")
+        return False
+    
+    def test_log_meal_from_receipt(self):
+        """Test logging a meal from receipt analysis"""
+        if not self.token:
+            return False
+        
+        # First create an analysis to get receipt items
+        receipt_text = """GROCERY STORE
+Large Eggs 12ct          $7.00
+Milk 1 gallon           $4.50
+Total: $11.50"""
+        
+        analysis_success, analysis_response = self.run_test(
+            "Create Analysis for Receipt Meal Test",
+            "POST",
+            "analysis",
+            200,
+            data={"receipt_text": receipt_text}
+        )
+        
+        if not analysis_success or 'id' not in analysis_response:
+            self.log("   ❌ Failed to create analysis for receipt meal test")
+            return False
+        
+        receipt_analysis_id = analysis_response['id']
+        
+        # Now log meal from receipt
+        meal_data = {
+            "item_name": "Large Eggs 12ct",
+            "calories_per_unit": 70,
+            "total_units": 12,
+            "units_consumed": 3,
+            "total_price": 7.00,
+            "source": "receipt",
+            "source_id": receipt_analysis_id,
+            "unit_name": "egg"
+        }
+        
+        success, response = self.run_test(
+            "Log Meal from Receipt",
+            "POST",
+            "meals/log",
+            200,
+            data=meal_data
+        )
+        
+        if success and 'id' in response:
+            self.log(f"   ✓ Receipt meal logged with ID: {response['id']}")
+            self.log(f"   ✓ Calories consumed: {response.get('calories_consumed')}")
+            self.log(f"   ✓ Proportional cost: ${response.get('cost')}")
+            
+            # Clean up analysis
+            self.run_test("Cleanup Receipt Analysis", "DELETE", f"analysis/{receipt_analysis_id}", 200)
+            return True
+        return False
+    
+    def test_get_today_meals(self):
+        """Test getting today's meal log"""
+        if not self.token:
+            return False
+            
+        success, response = self.run_test(
+            "Get Today's Meals",
+            "GET",
+            "meals/today",
+            200
+        )
+        
+        if success and 'entries' in response:
+            entries = response.get('entries', [])
+            self.log(f"   ✓ Found {len(entries)} meals today")
+            self.log(f"   ✓ Total calories: {response.get('total_calories', 0)}")
+            self.log(f"   ✓ Total cost: ${response.get('total_cost', 0)}")
+            return True
+        return False
+    
+    def test_get_meals_by_date(self):
+        """Test getting meals for a specific date"""
+        if not self.token:
+            return False
+        
+        from datetime import datetime
+        today = datetime.now().strftime('%Y-%m-%d')
+            
+        success, response = self.run_test(
+            f"Get Meals for Date ({today})",
+            "GET",
+            f"meals/date/{today}",
+            200
+        )
+        
+        if success and 'entries' in response:
+            entries = response.get('entries', [])
+            self.log(f"   ✓ Found {len(entries)} meals on {today}")
+            self.log(f"   ✓ Date matches: {response.get('date')}")
+            return True
+        return False
+    
+    def test_get_calendar_data(self):
+        """Test getting monthly calendar data"""
+        if not self.token:
+            return False
+        
+        from datetime import datetime
+        now = datetime.now()
+        month = now.month
+        year = now.year
+            
+        success, response = self.run_test(
+            f"Get Calendar Data ({month}/{year})",
+            "GET",
+            f"meals/calendar?month={month}&year={year}",
+            200
+        )
+        
+        if success and 'days' in response:
+            days = response.get('days', [])
+            monthly_totals = response.get('monthly_totals', {})
+            self.log(f"   ✓ Found {len(days)} days with data")
+            self.log(f"   ✓ Monthly calories: {monthly_totals.get('total_calories', 0)}")
+            self.log(f"   ✓ Monthly cost: ${monthly_totals.get('total_cost', 0)}")
+            self.log(f"   ✓ Days logged: {monthly_totals.get('days_logged', 0)}")
+            return True
+        return False
+    
+    def test_get_receipt_items_for_tracking(self):
+        """Test getting receipt items formatted for tracking"""
+        if not self.token:
+            return False
+        
+        # Create an analysis first
+        receipt_text = """SUPERMARKET
+Chicken Breast 2lb      $8.99
+Rice 5lb bag           $6.99
+Bananas 2lb            $2.49
+Total: $18.47"""
+        
+        analysis_success, analysis_response = self.run_test(
+            "Create Analysis for Receipt Items Test",
+            "POST",
+            "analysis",
+            200,
+            data={"receipt_text": receipt_text}
+        )
+        
+        if not analysis_success or 'id' not in analysis_response:
+            return False
+        
+        analysis_id = analysis_response['id']
+        
+        success, response = self.run_test(
+            "Get Receipt Items for Tracking",
+            "GET",
+            f"meals/receipt-items/{analysis_id}",
+            200
+        )
+        
+        if success and 'items' in response:
+            items = response.get('items', [])
+            self.log(f"   ✓ Found {len(items)} trackable items")
+            self.log(f"   ✓ Analysis ID: {response.get('analysis_id')}")
+            
+            # Check item format
+            if items:
+                item = items[0]
+                required_fields = ['name', 'total_calories', 'total_price', 'total_units', 'calories_per_unit']
+                if all(field in item for field in required_fields):
+                    self.log(f"   ✓ Items properly formatted for tracking")
+                    
+                    # Clean up analysis
+                    self.run_test("Cleanup Receipt Items Analysis", "DELETE", f"analysis/{analysis_id}", 200)
+                    return True
+        return False
+    
+    def test_delete_meal_entry(self):
+        """Test deleting a meal entry"""
+        if not self.token or not hasattr(self, 'meal_entry_id'):
+            self.log("   ⚠️ No meal entry to delete (skipping test)")
+            return True
+            
+        success, response = self.run_test(
+            "Delete Meal Entry",
+            "DELETE",
+            f"meals/{self.meal_entry_id}",
+            200
+        )
+        
+        if success:
+            self.log(f"   ✓ Meal entry deleted successfully")
+            return True
+        return False
+
 def main():
     """Run all backend API tests"""
     tester = NutritionAnalyzerAPITester()
@@ -452,6 +716,21 @@ def main():
     tester.test_get_specific_analysis()
     tester.test_get_nonexistent_analysis()
     tester.test_ai_analysis_processing()
+    
+    print()
+    print("🍽️ MEAL TRACKING TESTS")
+    print("-" * 30)
+    tester.test_food_database()
+    tester.test_food_database_search()
+    tester.test_log_meal_from_database()
+    tester.test_log_meal_from_receipt()
+    tester.test_get_today_meals()
+    tester.test_get_meals_by_date()
+    tester.test_get_calendar_data()
+    tester.test_get_receipt_items_for_tracking()
+    tester.test_delete_meal_entry()
+    
+    # Analysis cleanup should be last
     tester.test_delete_analysis()
     
     print()
