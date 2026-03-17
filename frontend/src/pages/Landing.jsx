@@ -67,8 +67,8 @@ export default function Landing() {
               </div>
               
               <h1 className="font-outfit font-extrabold text-5xl md:text-7xl tracking-tight leading-none">
-                Know Your
-                <span className="block gradient-text">Calories Per Dollar</span>
+                Stop Guessing.
+                <span className="block gradient-text">Start Saving.</span>
               </h1>
               
               <p className="font-inter text-lg md:text-xl text-muted-foreground max-w-lg leading-relaxed">
