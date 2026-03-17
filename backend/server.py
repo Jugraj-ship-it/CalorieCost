@@ -902,7 +902,7 @@ async def get_receipt_items_for_tracking(analysis_id: str, current_user: dict = 
     # Estimate grams and calories per 100g from item data
     tracking_items = []
     for item in analysis.get("items", []):
-        quantity_str = item.get("quantity", "").lower()
+        quantity_str = (item.get("quantity") or "").lower()
         
         # Estimate total grams based on common patterns
         total_grams = 100.0  # Default
@@ -926,19 +926,20 @@ async def get_receipt_items_for_tracking(analysis_id: str, current_user: dict = 
         elif 'gallon' in quantity_str:
             total_grams = 3785  # 1 gallon of milk
         elif 'dozen' in quantity_str or '12' in quantity_str:
-            if 'egg' in item.get("name", "").lower():
+            if 'egg' in (item.get("name") or "").lower():
                 total_grams = 720  # 12 eggs × 60g
         else:
             # Estimate based on calories (rough approximation)
-            total_grams = max(100, item["calories"] / 2)  # Assume ~200 cal/100g average
+            total_grams = max(100, item.get("calories", 100) / 2)  # Assume ~200 cal/100g average
         
         # Calculate calories per 100g from total
-        calories_per_100g = int((item["calories"] / total_grams) * 100) if total_grams > 0 else 100
+        item_calories = item.get("calories", 100)
+        calories_per_100g = int((item_calories / total_grams) * 100) if total_grams > 0 else 100
         
         tracking_items.append({
-            "name": item["name"],
-            "total_calories": item["calories"],
-            "total_price": item["price"],
+            "name": item.get("name", "Unknown"),
+            "total_calories": item_calories,
+            "total_price": item.get("price", 0),
             "total_grams": round(total_grams),
             "calories_per_100g": calories_per_100g,
             "quantity": quantity_str or f"~{round(total_grams)}g"

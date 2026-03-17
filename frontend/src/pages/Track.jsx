@@ -38,13 +38,15 @@ import {
   Loader2,
   UtensilsCrossed,
   TrendingUp,
-  Scale,
   Beef,
   Wheat,
   Droplets,
   Leaf,
   Cookie,
-  X
+  X,
+  Receipt,
+  ArrowRight,
+  CheckCircle2
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -60,13 +62,26 @@ export default function Track() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dailyData, setDailyData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('chronological'); // 'chronological' or 'by-meal'
+  const [viewMode, setViewMode] = useState('chronological');
   
   // Add food modal state
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addSource, setAddSource] = useState('search'); // 'search' or 'receipt'
+  
+  // Search mode state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  
+  // Receipt mode state
+  const [receipts, setReceipts] = useState([]);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [receiptItems, setReceiptItems] = useState([]);
+  const [selectedReceiptItem, setSelectedReceiptItem] = useState(null);
+  const [usdaMatches, setUsdaMatches] = useState([]);
+  const [searchingUsda, setSearchingUsda] = useState(false);
+  
+  // Selected food state
   const [selectedFood, setSelectedFood] = useState(null);
   const [foodDetails, setFoodDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -83,6 +98,7 @@ export default function Track() {
 
   useEffect(() => {
     fetchDailyData();
+    fetchReceipts();
   }, [selectedDate]);
 
   const fetchDailyData = async () => {
@@ -95,6 +111,24 @@ export default function Track() {
       toast.error('Failed to load daily data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchReceipts = async () => {
+    try {
+      const response = await axios.get(`${API}/analysis`);
+      setReceipts(response.data);
+    } catch (error) {
+      console.error('Failed to fetch receipts');
+    }
+  };
+
+  const fetchReceiptItems = async (analysisId) => {
+    try {
+      const response = await axios.get(`${API}/meals/receipt-items/${analysisId}`);
+      setReceiptItems(response.data.items);
+    } catch (error) {
+      toast.error('Failed to load receipt items');
     }
   };
 
@@ -127,12 +161,12 @@ export default function Track() {
     setSelectedFood(food);
     setLoadingDetails(true);
     setSearchResults([]);
+    setUsdaMatches([]);
     setSearchQuery(food.name);
     
     try {
       const response = await axios.get(`${API}/food/${food.fdc_id}`);
       setFoodDetails(response.data);
-      // Set default serving if available
       if (response.data.serving_sizes?.length > 0) {
         setSelectedServing(response.data.serving_sizes[0]);
       }
@@ -140,6 +174,42 @@ export default function Track() {
       toast.error('Failed to load food details');
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  // Receipt handling
+  const handleReceiptSelect = (analysisId) => {
+    setSelectedReceipt(analysisId);
+    setSelectedReceiptItem(null);
+    setUsdaMatches([]);
+    setSelectedFood(null);
+    setFoodDetails(null);
+    if (analysisId) {
+      fetchReceiptItems(analysisId);
+    } else {
+      setReceiptItems([]);
+    }
+  };
+
+  const handleReceiptItemSelect = async (item) => {
+    setSelectedReceiptItem(item);
+    setSelectedFood(null);
+    setFoodDetails(null);
+    setUsdaMatches([]);
+    
+    // Pre-fill price from receipt
+    setTotalPrice(item.total_price.toString());
+    setTotalGramsPurchased(item.total_grams?.toString() || '');
+    
+    // Search USDA for this item
+    setSearchingUsda(true);
+    try {
+      const response = await axios.get(`${API}/food-search?q=${encodeURIComponent(item.name)}`);
+      setUsdaMatches(response.data.items || []);
+    } catch (error) {
+      toast.error('Failed to find USDA matches');
+    } finally {
+      setSearchingUsda(false);
     }
   };
 
@@ -196,7 +266,7 @@ export default function Track() {
         total_grams_purchased: parseFloat(totalGramsPurchased) || servingGrams,
         total_price: parseFloat(totalPrice) || 0,
         meal_type: mealType || null,
-        source: 'usda'
+        source: addSource === 'receipt' ? 'receipt' : 'usda'
       });
       
       toast.success('Meal logged!');
@@ -221,6 +291,7 @@ export default function Track() {
 
   const resetModal = () => {
     setShowAddModal(false);
+    setAddSource('search');
     setSearchQuery('');
     setSearchResults([]);
     setSelectedFood(null);
@@ -230,6 +301,10 @@ export default function Track() {
     setMealType('');
     setTotalPrice('');
     setTotalGramsPurchased('');
+    setSelectedReceipt(null);
+    setReceiptItems([]);
+    setSelectedReceiptItem(null);
+    setUsdaMatches([]);
   };
 
   const nutrients = calculateNutrients();
@@ -306,7 +381,6 @@ export default function Track() {
             </div>
           ) : (
             <>
-              {/* Calories Header */}
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <p className="text-sm text-muted-foreground font-inter">Total Calories</p>
@@ -318,56 +392,13 @@ export default function Track() {
                 </div>
               </div>
 
-              {/* Macro Bars */}
               <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                <MacroCard 
-                  icon={<Beef className="w-4 h-4" />}
-                  label="Protein"
-                  value={dailyData?.total_protein || 0}
-                  unit="g"
-                  color="text-red-500"
-                  bgColor="bg-red-500/10"
-                />
-                <MacroCard 
-                  icon={<Wheat className="w-4 h-4" />}
-                  label="Carbs"
-                  value={dailyData?.total_carbs || 0}
-                  unit="g"
-                  color="text-amber-500"
-                  bgColor="bg-amber-500/10"
-                />
-                <MacroCard 
-                  icon={<Droplets className="w-4 h-4" />}
-                  label="Fat"
-                  value={dailyData?.total_fat || 0}
-                  unit="g"
-                  color="text-blue-500"
-                  bgColor="bg-blue-500/10"
-                />
-                <MacroCard 
-                  icon={<Leaf className="w-4 h-4" />}
-                  label="Fiber"
-                  value={dailyData?.total_fiber || 0}
-                  unit="g"
-                  color="text-green-500"
-                  bgColor="bg-green-500/10"
-                />
-                <MacroCard 
-                  icon={<Cookie className="w-4 h-4" />}
-                  label="Sugar"
-                  value={dailyData?.total_sugar || 0}
-                  unit="g"
-                  color="text-pink-500"
-                  bgColor="bg-pink-500/10"
-                />
-                <MacroCard 
-                  icon={<UtensilsCrossed className="w-4 h-4" />}
-                  label="Meals"
-                  value={dailyData?.meal_count || 0}
-                  unit=""
-                  color="text-primary"
-                  bgColor="bg-primary/10"
-                />
+                <MacroCard icon={<Beef className="w-4 h-4" />} label="Protein" value={dailyData?.total_protein || 0} unit="g" color="text-red-500" bgColor="bg-red-500/10" />
+                <MacroCard icon={<Wheat className="w-4 h-4" />} label="Carbs" value={dailyData?.total_carbs || 0} unit="g" color="text-amber-500" bgColor="bg-amber-500/10" />
+                <MacroCard icon={<Droplets className="w-4 h-4" />} label="Fat" value={dailyData?.total_fat || 0} unit="g" color="text-blue-500" bgColor="bg-blue-500/10" />
+                <MacroCard icon={<Leaf className="w-4 h-4" />} label="Fiber" value={dailyData?.total_fiber || 0} unit="g" color="text-green-500" bgColor="bg-green-500/10" />
+                <MacroCard icon={<Cookie className="w-4 h-4" />} label="Sugar" value={dailyData?.total_sugar || 0} unit="g" color="text-pink-500" bgColor="bg-pink-500/10" />
+                <MacroCard icon={<UtensilsCrossed className="w-4 h-4" />} label="Meals" value={dailyData?.meal_count || 0} unit="" color="text-primary" bgColor="bg-primary/10" />
               </div>
             </>
           )}
@@ -377,20 +408,10 @@ export default function Track() {
       {/* View Toggle & Add Button */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-          <Button
-            variant={viewMode === 'chronological' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('chronological')}
-            data-testid="view-chronological"
-          >
+          <Button variant={viewMode === 'chronological' ? 'secondary' : 'ghost'} size="sm" onClick={() => setViewMode('chronological')} data-testid="view-chronological">
             Chronological
           </Button>
-          <Button
-            variant={viewMode === 'by-meal' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('by-meal')}
-            data-testid="view-by-meal"
-          >
+          <Button variant={viewMode === 'by-meal' ? 'secondary' : 'ghost'} size="sm" onClick={() => setViewMode('by-meal')} data-testid="view-by-meal">
             By Meal
           </Button>
         </div>
@@ -420,12 +441,7 @@ export default function Track() {
           ) : (
             <div className="space-y-3">
               {dailyData.entries.map((entry) => (
-                <MealEntryCard 
-                  key={entry.id} 
-                  entry={entry} 
-                  onDelete={() => handleDeleteEntry(entry.id)}
-                  showMealType
-                />
+                <MealEntryCard key={entry.id} entry={entry} onDelete={() => handleDeleteEntry(entry.id)} showMealType />
               ))}
             </div>
           )}
@@ -437,47 +453,193 @@ export default function Track() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-outfit text-xl">Add Food</DialogTitle>
-            <DialogDescription>Search USDA database for accurate nutrition data</DialogDescription>
+            <DialogDescription>Search USDA database or add from your receipts</DialogDescription>
           </DialogHeader>
 
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search foods... (e.g., chicken breast, banana)"
-              className="pl-10"
-              data-testid="food-search-input"
-            />
-            {searching && (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" />
-            )}
+          {/* Source Toggle */}
+          <div className="flex gap-2 mb-4">
+            <Button
+              variant={addSource === 'search' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setAddSource('search');
+                setSelectedReceiptItem(null);
+                setUsdaMatches([]);
+                setSelectedFood(null);
+                setFoodDetails(null);
+              }}
+              className="flex-1"
+              data-testid="source-search"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              Search USDA
+            </Button>
+            <Button
+              variant={addSource === 'receipt' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setAddSource('receipt');
+                setSearchResults([]);
+                setSelectedFood(null);
+                setFoodDetails(null);
+              }}
+              className="flex-1"
+              data-testid="source-receipt"
+            >
+              <Receipt className="w-4 h-4 mr-2" />
+              From Receipt
+            </Button>
           </div>
 
-          {/* Search Results */}
-          {searchResults.length > 0 && !selectedFood && (
-            <div className="border rounded-xl max-h-60 overflow-auto">
-              {searchResults.map((food, i) => (
-                <button
-                  key={food.fdc_id}
-                  className="w-full p-4 text-left hover:bg-muted/50 transition-colors border-b last:border-0"
-                  onClick={() => handleSelectFood(food)}
-                  data-testid={`search-result-${i}`}
-                >
-                  <p className="font-medium">{food.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Per 100g: {food.nutrients_per_100g.calories} cal | 
-                    P: {food.nutrients_per_100g.protein}g | 
-                    C: {food.nutrients_per_100g.carbs}g | 
-                    F: {food.nutrients_per_100g.fat}g
-                  </p>
-                </button>
-              ))}
-            </div>
+          {addSource === 'search' ? (
+            // Direct USDA Search
+            <>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="Search foods... (e.g., chicken breast, banana)"
+                  className="pl-10"
+                  data-testid="food-search-input"
+                />
+                {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" />}
+              </div>
+
+              {searchResults.length > 0 && !selectedFood && (
+                <div className="border rounded-xl max-h-60 overflow-auto">
+                  {searchResults.map((food, i) => (
+                    <button
+                      key={food.fdc_id}
+                      className="w-full p-4 text-left hover:bg-muted/50 transition-colors border-b last:border-0"
+                      onClick={() => handleSelectFood(food)}
+                      data-testid={`search-result-${i}`}
+                    >
+                      <p className="font-medium">{food.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Per 100g: {food.nutrients_per_100g.calories} cal | P: {food.nutrients_per_100g.protein}g | C: {food.nutrients_per_100g.carbs}g | F: {food.nutrients_per_100g.fat}g
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            // Receipt Mode
+            <>
+              {!selectedReceiptItem ? (
+                // Step 1: Select receipt and item
+                <div className="space-y-4">
+                  <Select value={selectedReceipt || ''} onValueChange={handleReceiptSelect}>
+                    <SelectTrigger data-testid="receipt-select">
+                      <SelectValue placeholder="Select a receipt..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {receipts.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {format(new Date(r.created_at), 'MMM d')} - {r.item_count} items (${r.total_cost})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {receiptItems.length > 0 && (
+                    <div className="space-y-2 max-h-60 overflow-auto">
+                      <p className="text-sm text-muted-foreground">Select an item to find its nutrition data:</p>
+                      {receiptItems.map((item, i) => (
+                        <button
+                          key={i}
+                          className="w-full p-4 rounded-xl text-left transition-colors bg-muted/50 hover:bg-muted border border-transparent hover:border-primary/30"
+                          onClick={() => handleReceiptItemSelect(item)}
+                          data-testid={`receipt-item-${i}`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">{item.name}</span>
+                            <span className="text-accent font-mono">${item.total_price}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {item.quantity || `~${item.total_grams}g`}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : !selectedFood ? (
+                // Step 2: Match with USDA
+                <div className="space-y-4">
+                  <div className="p-4 bg-accent/10 rounded-xl border border-accent/30">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">From receipt:</p>
+                        <p className="font-semibold">{selectedReceiptItem.name}</p>
+                        <p className="text-sm text-accent font-mono">${selectedReceiptItem.total_price}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setSelectedReceiptItem(null);
+                        setUsdaMatches([]);
+                      }}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <ArrowRight className="w-4 h-4" />
+                    <span>Select matching food from USDA database:</span>
+                  </div>
+
+                  {searchingUsda ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      <span className="ml-2 text-muted-foreground">Searching USDA...</span>
+                    </div>
+                  ) : usdaMatches.length > 0 ? (
+                    <div className="space-y-2 max-h-60 overflow-auto">
+                      {usdaMatches.map((food, i) => (
+                        <button
+                          key={food.fdc_id}
+                          className="w-full p-4 rounded-xl text-left transition-colors bg-muted/50 hover:bg-primary/10 border border-transparent hover:border-primary/30"
+                          onClick={() => handleSelectFood(food)}
+                          data-testid={`usda-match-${i}`}
+                        >
+                          <p className="font-medium">{food.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Per 100g: {food.nutrients_per_100g.calories} cal | P: {food.nutrients_per_100g.protein}g | C: {food.nutrients_per_100g.carbs}g | F: {food.nutrients_per_100g.fat}g
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">No USDA matches found. Try searching manually.</p>
+                  )}
+
+                  {/* Manual search option */}
+                  <div className="pt-4 border-t">
+                    <p className="text-sm text-muted-foreground mb-2">Can't find it? Search manually:</p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search USDA database..."
+                        className="pl-10"
+                        onChange={(e) => {
+                          const query = e.target.value;
+                          if (query.length >= 2) {
+                            setSearchingUsda(true);
+                            axios.get(`${API}/food-search?q=${encodeURIComponent(query)}`)
+                              .then(res => setUsdaMatches(res.data.items || []))
+                              .finally(() => setSearchingUsda(false));
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
 
-          {/* Selected Food Details */}
+          {/* Selected Food Details - shown for both modes */}
           {selectedFood && (
             <div className="space-y-4">
               {loadingDetails ? (
@@ -486,18 +648,24 @@ export default function Track() {
                 </div>
               ) : foodDetails && (
                 <>
-                  {/* Food Name & Clear */}
+                  {/* Food Name & Source indicator */}
                   <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl">
                     <div>
-                      <p className="font-outfit font-semibold">{foodDetails.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Per 100g: {foodDetails.nutrients_per_100g.calories} cal
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-outfit font-semibold">{foodDetails.name}</p>
+                        {addSource === 'receipt' && (
+                          <Badge variant="secondary" className="text-xs">
+                            <Receipt className="w-3 h-3 mr-1" />
+                            From Receipt
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">Per 100g: {foodDetails.nutrients_per_100g.calories} cal</p>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => {
                       setSelectedFood(null);
                       setFoodDetails(null);
-                      setSearchQuery('');
+                      if (addSource === 'search') setSearchQuery('');
                     }}>
                       <X className="w-4 h-4" />
                     </Button>
@@ -515,10 +683,7 @@ export default function Track() {
                               ? 'border-primary bg-primary/10'
                               : 'border-border hover:border-primary/50'
                           }`}
-                          onClick={() => {
-                            setSelectedServing(serving);
-                            setCustomGrams('');
-                          }}
+                          onClick={() => { setSelectedServing(serving); setCustomGrams(''); }}
                           data-testid={`serving-${i}`}
                         >
                           <p className="font-medium text-sm">{serving.description}</p>
@@ -527,16 +692,12 @@ export default function Track() {
                       ))}
                     </div>
                     
-                    {/* Custom grams */}
                     <div className="mt-3">
                       <label className="text-sm text-muted-foreground mb-1 block">Or enter custom amount (grams)</label>
                       <Input
                         type="number"
                         value={customGrams}
-                        onChange={(e) => {
-                          setCustomGrams(e.target.value);
-                          setSelectedServing(null);
-                        }}
+                        onChange={(e) => { setCustomGrams(e.target.value); setSelectedServing(null); }}
                         placeholder="e.g., 150"
                         className="font-mono"
                         data-testid="custom-grams"
@@ -563,7 +724,9 @@ export default function Track() {
 
                   {/* Cost Tracking */}
                   <div className="p-4 bg-muted/30 rounded-xl">
-                    <p className="text-sm font-medium mb-3">Cost Tracking (optional)</p>
+                    <p className="text-sm font-medium mb-3">
+                      Cost Tracking {addSource === 'receipt' && <span className="text-primary">(pre-filled from receipt)</span>}
+                    </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs text-muted-foreground mb-1 block">Total Price Paid ($)</label>
@@ -644,11 +807,7 @@ export default function Track() {
                     disabled={submitting || !getServingGrams()}
                     data-testid="log-meal-btn"
                   >
-                    {submitting ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4 mr-2" />
-                    )}
+                    {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
                     Add to Log
                   </Button>
                 </>
@@ -679,16 +838,17 @@ function MacroCard({ icon, label, value, unit, color, bgColor }) {
 // Meal Entry Card Component
 function MealEntryCard({ entry, onDelete, showMealType = false }) {
   return (
-    <div
-      className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted/70 transition-colors group"
-      data-testid={`meal-entry-${entry.id}`}
-    >
+    <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted/70 transition-colors group" data-testid={`meal-entry-${entry.id}`}>
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <p className="font-medium">{entry.item_name}</p>
           {showMealType && entry.meal_type && (
-            <Badge variant="outline" className="text-xs capitalize">
-              {entry.meal_type}
+            <Badge variant="outline" className="text-xs capitalize">{entry.meal_type}</Badge>
+          )}
+          {entry.source === 'receipt' && (
+            <Badge variant="secondary" className="text-xs">
+              <Receipt className="w-3 h-3 mr-1" />
+              Receipt
             </Badge>
           )}
         </div>
@@ -704,9 +864,7 @@ function MealEntryCard({ entry, onDelete, showMealType = false }) {
       <div className="flex items-center gap-4">
         <div className="text-right">
           <p className="font-mono text-lg font-bold text-primary">{entry.calories} cal</p>
-          {entry.cost > 0 && (
-            <p className="font-mono text-sm text-accent">${entry.cost.toFixed(2)}</p>
-          )}
+          {entry.cost > 0 && <p className="font-mono text-sm text-accent">${entry.cost.toFixed(2)}</p>}
         </div>
         <Button
           variant="ghost"
@@ -730,9 +888,7 @@ function EmptyState({ onAdd }) {
         <UtensilsCrossed className="w-8 h-8 text-muted-foreground" />
       </div>
       <h3 className="font-outfit font-semibold text-lg mb-2">No meals logged</h3>
-      <p className="text-muted-foreground text-sm mb-6">
-        Start tracking your nutrition with USDA-verified data
-      </p>
+      <p className="text-muted-foreground text-sm mb-6">Start tracking your nutrition with USDA-verified data</p>
       <Button onClick={onAdd}>
         <Plus className="w-4 h-4 mr-2" />
         Add Food
