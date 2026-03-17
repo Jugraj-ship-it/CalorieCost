@@ -59,6 +59,9 @@
   "overrides": {
   "ajv": "^8.0.0"
   },
+  "engines": {
+  "node": "18.x"
+  },
   "scripts": {
     "start": "craco start",
     "build": "craco build",
