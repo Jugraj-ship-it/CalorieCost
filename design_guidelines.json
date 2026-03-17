@@ -1,0 +1,176 @@
+{
+  "identity": {
+    "name": "E1: The Anti-AI Designer",
+    "mission": "Create a 'Bio-Metric Finance' aesthetic that blends organic health with precise data analytics.",
+    "principles": [
+      "Fusion: Mix 'Botanical Freshness' with 'High-Frequency Trading' visuals.",
+      "Emotion: Empower users to feel control over both health and budget.",
+      "Content: Data is beautiful. Highlight the 'Calories per Dollar' metric as the hero.",
+      "Contrast: Soft organic shapes for food images vs. sharp mono-spaced numbers for costs."
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Outfit, sans-serif",
+      "body": "Inter, sans-serif",
+      "data": "JetBrains Mono, monospace"
+    },
+    "installation": {
+      "google_fonts_url": "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    },
+    "usage": {
+      "h1": "font-outfit font-extrabold text-5xl md:text-7xl tracking-tight leading-none",
+      "h2": "font-outfit font-bold text-3xl md:text-5xl tracking-tight",
+      "h3": "font-outfit font-semibold text-2xl tracking-normal",
+      "body": "font-inter text-base md:text-lg leading-relaxed text-muted-foreground",
+      "caption": "font-inter text-sm font-medium uppercase tracking-widest text-muted-foreground",
+      "data_value": "font-mono text-primary font-bold tracking-tight",
+      "nav_link": "font-outfit font-medium text-sm hover:text-primary transition-colors"
+    }
+  },
+  "colors": {
+    "theme_strategy": "Bio-Metric Finance (Dual Mode)",
+    "light": {
+      "background": "#FAFAF9",
+      "foreground": "#18181B",
+      "card": "#FFFFFF",
+      "card_foreground": "#18181B",
+      "primary": "#059669",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#F4F4F5",
+      "secondary_foreground": "#18181B",
+      "accent": "#F97316",
+      "accent_foreground": "#FFFFFF",
+      "muted": "#E4E4E7",
+      "muted_foreground": "#71717A",
+      "border": "#E4E4E7",
+      "input": "#E4E4E7"
+    },
+    "dark": {
+      "background": "#09090B",
+      "foreground": "#FAFAFA",
+      "card": "#18181B",
+      "card_foreground": "#FAFAFA",
+      "primary": "#10B981",
+      "primary_foreground": "#000000",
+      "secondary": "#27272A",
+      "secondary_foreground": "#FAFAFA",
+      "accent": "#FB923C",
+      "accent_foreground": "#000000",
+      "muted": "#27272A",
+      "muted_foreground": "#A1A1AA",
+      "border": "#27272A",
+      "input": "#27272A"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "info": "#3B82F6",
+      "calories_high": "#EF4444",
+      "calories_low": "#10B981",
+      "cost_high": "#F59E0B",
+      "cost_low": "#10B981"
+    }
+  },
+  "layout": {
+    "spacing_scale": "Generous (2x standard). Use p-8, p-12 for sections.",
+    "container_padding": "px-4 md:px-8 lg:px-12",
+    "grids": {
+      "marketing_tetris": "grid grid-cols-1 md:grid-cols-12 gap-8",
+      "dashboard_bento": "grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[minmax(180px,auto)]"
+    },
+    "alignment": {
+      "text": "Left aligned by default. Center ONLY for major hero headlines.",
+      "numbers": "Right aligned in tables (tabular-nums)."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "rounded-full px-8 py-6 font-outfit font-bold tracking-wide shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300",
+      "secondary": "rounded-full px-8 py-6 bg-secondary text-secondary-foreground hover:bg-secondary/80 font-medium",
+      "ghost": "rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+    },
+    "cards": {
+      "style": "bg-card border border-border/50 shadow-sm rounded-2xl hover:border-primary/20 hover:shadow-md transition-all duration-300",
+      "padding": "p-6 or p-8"
+    },
+    "inputs": {
+      "style": "h-12 rounded-xl bg-background border-border focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-inter"
+    },
+    "tables": {
+      "wrapper": "rounded-xl border border-border overflow-hidden bg-card",
+      "header": "bg-muted/50 font-outfit text-xs uppercase tracking-wider text-muted-foreground",
+      "row": "hover:bg-muted/30 transition-colors border-b border-border/50 last:border-0",
+      "cell": "p-4 font-inter text-sm"
+    },
+    "receipt_scanner": {
+      "dropzone": "border-2 border-dashed border-primary/30 rounded-3xl bg-primary/5 hover:bg-primary/10 transition-colors flex flex-col items-center justify-center min-h-[300px] cursor-pointer group",
+      "icon": "text-primary/50 group-hover:text-primary group-hover:scale-110 transition-all duration-300"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-lg",
+    "gradients": {
+      "hero_text": "bg-clip-text text-transparent bg-gradient-to-r from-primary via-emerald-500 to-teal-400",
+      "subtle_glow": "bg-gradient-to-br from-primary/20 via-transparent to-accent/10"
+    },
+    "borders": "1px solid border-border. Use 'border-r' or 'border-b' on grid items for a technical look.",
+    "shadows": "shadow-sm for cards, shadow-xl for floating elements/modals."
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-width={1.5} size={20}"
+    },
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1766228271606-f2d7bdbb9db3?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Breakfast ingredients flat lay",
+        "category": "Hero Background",
+        "location": "Landing Page - Hero Section (with overlay)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1661260518143-b64a9d980db4?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Couple shopping in grocery store",
+        "category": "Feature Image",
+        "location": "Landing Page - 'Smart Shopping' Section"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1723725776967-78606a070730?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Close up of receipt/ticket",
+        "category": "UI Decor",
+        "location": "Landing Page - 'Receipt Scan' Featurette"
+      }
+    ]
+  },
+  "motion": {
+    "hover": "transition-all duration-300 ease-out hover:-translate-y-1",
+    "click": "active:scale-95",
+    "page_load": "animate-in fade-in slide-in-from-bottom-4 duration-700",
+    "list_stagger": "stagger-children"
+  },
+  "accessibility": {
+    "contrast": "Ensure text is APCA compliant. No grey text on grey backgrounds.",
+    "focus": "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+    "interactive_area": "Minimum 44x44px for all touch targets."
+  },
+  "instructions_to_main_agent": [
+    "INSTALLATION: Add fonts via Google Fonts link in index.html.",
+    "THEME: Implement the dual-theme toggle immediately. Default to 'System' preference.",
+    "SHADCN: Customize the default radius to '0.75rem' (rounded-xl) for a friendlier feel.",
+    "FORMS: Use 'react-hook-form' with 'zod' for validation.",
+    "NOTIFICATIONS: Use 'sonner' for all success/error messages.",
+    "CHARTS: Use 'recharts' via shadcn/charts for the calorie/$ analysis.",
+    "OCR MOCK: If OCR API is not ready, mock the response with a 2-second delay and dummy data."
+  ],
+  "universal_guidelines": [
+    "Do NOT use gradients for dark colors.",
+    "Do NOT use 'Inter' for Headings. Use 'Outfit'.",
+    "Do NOT use standard HTML Select/Datepicker. Use Shadcn components.",
+    "Always add 'data-testid' to interactive elements.",
+    "Use 'sonner' for toasts.",
+    "Components must use named exports.",
+    "Pages must use default exports."
+  ]
+}
